@@ -1,0 +1,59 @@
+@page {
+  size: A4;
+  margin: 15mm;
+}
+body {
+  font-family: 'MS Gothic', sans-serif;
+  line-height: 1.5;
+}
+
+/* 各ページの基本設定 */
+.page {
+  page-break-after: always;
+}
+.page:last-child {
+  page-break-after: auto;
+}
+
+/* セクション1: 表紙 */
+.cover-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 250mm; /* A4に収める */
+  text-align: center;
+}
+
+/* セクション3: 写真ページ（1ページ3枚）  [cite: 1-31] */
+.photo-row {
+  display: flex;
+  margin-bottom: 8mm;
+  border: 1px solid black;
+  height: 70mm; /* 1ページに3つ収まる高さ */
+}
+.photo-box {
+  width: 93.3mm; /* 70mm * 4/3 = 約93.3mm */
+  aspect-ratio: 4 / 3;
+  border-right: 1px solid black;
+  overflow: hidden;
+}
+.photo-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.info-table {
+  flex: 1;
+  border-collapse: collapse;
+}
+.info-table td {
+  border-bottom: 1px solid black;
+  border-left: 1px solid black;
+  padding: 2mm;
+  font-size: 9pt;
+}
+.info-table tr:last-child td {
+  border-bottom: none;
+}
