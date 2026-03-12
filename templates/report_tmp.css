@@ -1,59 +1,459 @@
 @page {
   size: A4;
-  margin: 15mm;
-}
-body {
-  font-family: 'MS Gothic', sans-serif;
-  line-height: 1.5;
+  margin: 10mm 5mm 10mm 20mm;
 }
 
-/* 各ページの基本設定 */
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'MS Gothic', sans-serif;
+  color: #111;
+  line-height: 1.35;
+}
+
 .page {
   page-break-after: always;
+  min-height: 267mm;
+  box-sizing: border-box;
 }
+
 .page:last-child {
   page-break-after: auto;
 }
 
-/* セクション1: 表紙 */
 .cover-page {
+  height: 267mm;
+  padding: 3mm;
+}
+
+.cover-frame {
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.cover-frame-outer {
+  border: 0.4mm solid #222;
+  padding: 2mm;
+}
+
+.cover-frame-inner {
+  border: 0.3mm solid #222;
+  padding: 9mm 14mm 8mm;
   display: flex;
   flex-direction: column;
-  align-items: center;
+}
+
+.cover-header {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  min-height: 8mm;
+  font-size: 10.4pt;
+}
+
+.cover-recipient-row {
+  min-height: 11mm;
+  margin-top: 1.5mm;
+}
+
+.cover-recipient {
+  border-bottom: 0.3mm solid #444;
+  padding-bottom: 1mm;
+  width: 114mm;
+}
+
+.cover-date {
+  min-width: 42mm;
+  text-align: right;
+}
+
+.cover-main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
   justify-content: center;
-  height: 250mm; /* A4に収める */
+  padding: 6mm 0 8mm;
+}
+
+.cover-title-block {
+  text-align: center;
+  margin-top: 0;
+}
+
+.cover-title {
+  margin: 0;
+  font-size: 22pt;
+  font-weight: normal;
+  letter-spacing: 0.08em;
+}
+
+.cover-subtitle {
+  margin-top: 8mm;
+  font-size: 18pt;
+  letter-spacing: 0.08em;
+}
+
+.cover-details {
+  width: 120mm;
+  margin: 24mm auto 0;
+}
+
+.cover-detail-row {
+  display: grid;
+  grid-template-columns: 24mm 6mm 1fr;
+  align-items: start;
+  margin-bottom: 5mm;
+  font-size: 11.5pt;
+}
+
+.cover-detail-label,
+.cover-detail-colon {
   text-align: center;
 }
 
-/* セクション3: 写真ページ（1ページ3枚）  [cite: 1-31] */
-.photo-row {
-  display: flex;
-  margin-bottom: 8mm;
-  border: 1px solid black;
-  height: 70mm; /* 1ページに3つ収まる高さ */
+.cover-company {
+  width: 112mm;
+  text-align: left;
+  margin: 0 auto 0;
 }
-.photo-box {
-  width: 93.3mm; /* 70mm * 4/3 = 約93.3mm */
-  aspect-ratio: 4 / 3;
-  border-right: 1px solid black;
+
+.cover-company-name {
+  font-size: 12pt;
+  margin-bottom: 2mm;
+}
+
+.cover-company-postal,
+.cover-company-line,
+.cover-company-contact {
+  font-size: 9.4pt;
+  margin-bottom: 1.2mm;
+}
+
+.cover-company-contact-gap {
+  margin-left: 6mm;
+}
+
+.overview-page {
+  height: 267mm;
+  padding: 3mm 6mm 2mm;
+}
+
+.overview-sheet {
+  min-height: 0;
+  break-inside: avoid;
+}
+
+.overview-recipient {
+  font-size: 10.5pt;
+  border-bottom: 0.3mm solid #555;
+  display: inline-block;
+  padding-bottom: 1mm;
+  min-width: 120mm;
+}
+
+.overview-title {
+  margin: 12mm 0 0;
+  text-align: center;
+  font-size: 17pt;
+  font-weight: normal;
+  letter-spacing: 0.45em;
+  text-decoration: underline;
+}
+
+.overview-company {
+  width: 68mm;
+  margin-left: auto;
+  margin-top: 10mm;
+  text-align: center;
+  font-size: 10pt;
+  line-height: 1.32;
+}
+
+.overview-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8mm;
+  font-size: 10.3pt;
+}
+
+.overview-table td {
+  padding: 1.6mm 1.2mm;
+  vertical-align: top;
+}
+
+.overview-no {
+  width: 9mm;
+  text-align: right;
+  padding-right: 4mm;
+}
+
+.overview-label {
+  width: 27mm;
+}
+
+.overview-value {
+  border-bottom: 0.3mm solid #222;
+  padding-left: 5mm;
+}
+
+.overview-no-empty,
+.overview-label-empty {
+  border-bottom: none;
+}
+
+.work-section-label {
+  margin-top: 7mm;
+  font-size: 10.8pt;
+}
+
+.work-sheet {
+  border: 0.25mm solid #cfcfcf;
+  margin-top: 2mm;
+  min-height: 122mm;
+  padding: 4mm 6mm 3mm;
+  box-sizing: border-box;
+  break-inside: avoid;
+  display: flex;
+  flex-direction: column;
+}
+
+.work-group {
+  margin-bottom: 1mm;
+}
+
+.work-group-title {
+  font-size: 10.6pt;
+  margin-bottom: 1.8mm;
+}
+
+.work-line {
+  min-height: 6.1mm;
+  border-bottom: 0.2mm dotted #666;
+  font-size: 9.7pt;
+  display: flex;
+  align-items: center;
+  padding-left: 3mm;
+  box-sizing: border-box;
+}
+
+.work-line-blank {
+  color: transparent;
+}
+
+.work-note-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 6.4mm;
+  border-bottom: 0.2mm dotted #666;
+  font-size: 9.7pt;
+  margin-top: auto;
+}
+
+.photo-page {
+  --photo-width: 105mm;
+  --photo-panel-offset: 0mm;
+  --photo-panel-width: 75mm;
+  --photo-header-height: 6mm;
+  --photo-body-height: 75mm;
+  --photo-entry-height: 81mm;
+  --photo-gap: 9mm;
+  height: 267mm;
+  min-height: 267mm;
+  padding: 3mm 0;
+  display: grid;
+  grid-template-rows: repeat(3, var(--photo-entry-height));
+  row-gap: var(--photo-gap);
+}
+
+.photo-entry {
+  margin: 0;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  height: var(--photo-entry-height);
+  width: calc(var(--photo-width) + var(--photo-panel-offset) + var(--photo-panel-width));
+  display: flex;
+  flex-direction: column;
+}
+
+.photo-entry-header {
+  display: grid;
+  grid-template-columns: var(--photo-width) var(--photo-panel-width);
+}
+
+.photo-entry-header-left,
+.photo-entry-header-right {
+  border: 0.3mm solid #222;
+  border-bottom: none;
+  text-align: center;
+  font-size: 9.8pt;
+  padding: 0.65mm 0 0.35mm;
+  letter-spacing: 0.45em;
+  line-height: 1.1;
+  height: var(--photo-header-height);
+  box-sizing: border-box;
   overflow: hidden;
 }
+
+.photo-entry-header-left {
+  border-right: 0.3mm solid #222;
+}
+
+.photo-entry-header-right {
+  border-left: none;
+}
+
+.photo-entry-body {
+  display: grid;
+  grid-template-columns: var(--photo-width) var(--photo-panel-width);
+  height: var(--photo-body-height);
+  align-items: stretch;
+}
+
+.photo-box {
+  width: var(--photo-width);
+  height: var(--photo-body-height);
+  border: 0.3mm solid #222;
+  border-right: 0.3mm solid #222;
+  box-sizing: border-box;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1mm;
+  background: #fff;
+}
+
 .photo-box img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center center;
+  display: block;
 }
 
-.info-table {
-  flex: 1;
+.photo-placeholder {
+  font-size: 28pt;
+  color: #c8c8c8;
+}
+
+.photo-info-table {
+  width: 100%;
+  height: var(--photo-body-height);
   border-collapse: collapse;
+  table-layout: fixed;
 }
-.info-table td {
-  border-bottom: 1px solid black;
-  border-left: 1px solid black;
-  padding: 2mm;
-  font-size: 9pt;
+
+.photo-info-table th,
+.photo-info-table td {
+  border: 0.3mm solid #222;
+  padding: 0.45mm 0.85mm;
+  vertical-align: middle;
+  text-align: center;
+  font-size: 8.1pt;
+  font-weight: normal;
+  box-sizing: border-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  line-height: 1.15;
 }
-.info-table tr:last-child td {
+
+.photo-info-table th {
+  border-left: none;
+}
+
+.photo-info-table th {
+  width: 13.5mm;
+  text-align: center;
+  background: #fff;
+  white-space: nowrap;
+}
+
+.photo-value-center {
+  text-align: center;
+  font-size: 11pt;
+  vertical-align: middle;
+}
+
+.photo-info-row-no {
+  height: 5.8mm;
+}
+
+.photo-info-row-site,
+.photo-info-row-date,
+.photo-info-row-location {
+  height: 5.4mm;
+}
+
+.photo-writing-row th,
+.photo-writing-row td {
+  vertical-align: middle;
+  padding: 0;
+}
+
+.photo-writing-row th.stacked-cell {
+  vertical-align: middle;
+}
+
+.photo-writing-row-content {
+  height: 33mm;
+}
+
+.photo-writing-row-remarks {
+  height: 18mm;
+}
+
+.stacked-cell {
+  width: 13.5mm;
+  vertical-align: middle;
+}
+
+.stacked-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 8pt;
+  line-height: 1.05;
+}
+
+.stacked-label-content {
+  gap: 1.2mm;
+}
+
+.stacked-label-remarks {
+  gap: 2.2mm;
+}
+
+.writing-cell {
+  padding: 0;
+}
+
+.writing-line {
+  height: 5.5mm;
+  border-bottom: 0.2mm solid #cfcfcf;
+  padding: 0.35mm 0.7mm 0.05mm;
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: nowrap;
+  line-height: 1.15;
+  text-align: left;
+}
+
+.writing-cell .writing-line:last-child {
   border-bottom: none;
+}
+
+.photo-writing-row-content .writing-line {
+  height: 5.5mm;
+}
+
+.writing-cell-remarks .writing-line {
+  height: 4.8mm;
 }

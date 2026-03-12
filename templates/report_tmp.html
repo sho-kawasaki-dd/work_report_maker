@@ -3,35 +3,176 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{ report_title }}</title>
+  <title>{{ report.title }}</title>
   <link rel="stylesheet" href="report_tmp.css">
 </head>
 <body>
-
   <div class="page cover-page">
-    <h1>{{ report_title }}</h1>
-    <p>作成日: {{ create_date }}</p>
-    <p>担当者: {{ author_name }}</p>
-  </div>
+    <div class="cover-frame cover-frame-outer">
+      <div class="cover-frame cover-frame-inner">
+        <div class="cover-header">
+          <div class="cover-date">{{ report.cover.date }}</div>
+        </div>
 
-  <div class="page content-page">
-    <h2>業務内容・概要</h2>
-    <div style="white-space: pre-wrap;">{{ content_summary }}</div>
-  </div>
+        <div class="cover-recipient-row">
+          <div class="cover-recipient">{{ report.cover.recipient }}</div>
+        </div>
 
-  {% for chunk in photo_items | batch(3) %}
-  <div class="page">
-    {% for item in chunk %}
-    <div class="photo-row">
-      <div class="photo-box">
-        <img src="{{ item.photo_path }}">
+        <div class="cover-main">
+          <div class="cover-title-block">
+            <h1 class="cover-title">{{ report.cover.title }}</h1>
+            <div class="cover-subtitle">[ {{ report.cover.subtitle }} ]</div>
+          </div>
+
+          <div class="cover-details">
+            {% for row in report.cover.detail_rows %}
+            <div class="cover-detail-row">
+              <div class="cover-detail-label">{{ row.label }}</div>
+              <div class="cover-detail-colon">:</div>
+              <div class="cover-detail-value">{{ row.value }}</div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="cover-company">
+          <div class="cover-company-name">{{ report.cover.company.name }}</div>
+          <div class="cover-company-postal">{{ report.cover.company.postal_code }}</div>
+          {% for line in report.cover.company.address_lines %}
+          <div class="cover-company-line">{{ line }}</div>
+          {% endfor %}
+          <div class="cover-company-contact">
+            <span>{{ report.cover.company.tel_label }}</span>
+            <span>{{ report.cover.company.tel }}</span>
+            <span class="cover-company-contact-gap">{{ report.cover.company.fax_label }}</span>
+            <span>{{ report.cover.company.fax }}</span>
+          </div>
+        </div>
       </div>
-      <table class="info-table">
-        <tr><td style="width: 25mm; background: #eee;">No.</td><td>{{ item.no }}</td></tr>
-        <tr><td style="background: #eee;">施工箇所</td><td>{{ item.location }}</td></tr>
-        <tr><td style="background: #eee;">内容</td><td>{{ item.memo }}</td></tr>
-      </table>
     </div>
+  </div>
+
+  <div class="page overview-page">
+    <div class="overview-sheet">
+      <div class="overview-recipient">{{ report.overview.recipient }}</div>
+      <h1 class="overview-title">{{ report.overview.title }}</h1>
+
+      <div class="overview-company">
+        {% for line in report.overview.company_lines %}
+        <div>{{ line }}</div>
+        {% endfor %}
+      </div>
+
+      <table class="overview-table">
+        <tbody>
+          {% for row in report.overview.info_rows %}
+          <tr>
+            <td class="overview-no">{{ row.number }}</td>
+            <td class="overview-label">{{ row.label }}</td>
+            <td class="overview-value">{{ row.value }}</td>
+          </tr>
+          {% for extra_value in row.extra_values %}
+          <tr>
+            <td class="overview-no overview-no-empty"></td>
+            <td class="overview-label overview-label-empty"></td>
+            <td class="overview-value">{{ extra_value }}</td>
+          </tr>
+          {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <div class="work-section-label">{{ report.overview.work_section_title }}</div>
+      <div class="work-sheet">
+        {% for group in report.overview.work_groups %}
+        <div class="work-group">
+          <div class="work-group-title">{{ group.marker }} {{ group.title }}</div>
+          {% for item in group.lines %}
+          <div class="work-line">{{ item }}</div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+
+        {% for blank_line in report.overview.blank_lines %}
+        <div class="work-line work-line-blank">{{ blank_line }}</div>
+        {% endfor %}
+
+        <div class="work-note-row">
+          <div class="work-note">{{ report.overview.note_line }}</div>
+          <div class="work-ending">{{ report.overview.ending }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% for page in report.photo_pages %}
+  <div class="page photo-page">
+    {% for item in page %}
+    <section class="photo-entry">
+      <div class="photo-entry-header">
+        <div class="photo-entry-header-left">{{ report.photo_layout.labels.status_photo }}</div>
+        <div class="photo-entry-header-right">{{ report.photo_layout.labels.description }}</div>
+      </div>
+
+      <div class="photo-entry-body">
+        <div class="photo-box">
+          {% if item.photo_path %}
+          <img src="{{ item.photo_path }}" alt="写真 {{ item.no }}">
+          {% else %}
+          <div class="photo-placeholder">{{ item.no }}</div>
+          {% endif %}
+        </div>
+
+        <table class="photo-info-table">
+          <tbody>
+            <tr class="photo-info-row photo-info-row-no">
+              <th>{{ report.photo_layout.labels.photo_no }}</th>
+              <td class="photo-value-center">{{ item.no }}</td>
+            </tr>
+            <tr class="photo-info-row photo-info-row-site">
+              <th>{{ report.photo_layout.labels.site }}</th>
+              <td>{{ item.site }}</td>
+            </tr>
+            <tr class="photo-info-row photo-info-row-date">
+              <th>{{ report.photo_layout.labels.work_date }}</th>
+              <td>{{ item.work_date }}</td>
+            </tr>
+            <tr class="photo-info-row photo-info-row-location">
+              <th>{{ report.photo_layout.labels.location }}</th>
+              <td>{{ item.location }}</td>
+            </tr>
+            <tr class="photo-info-row photo-writing-row photo-writing-row-content photo-layout-{{ item.work_content.layout_mode }}">
+              <th class="stacked-cell stacked-cell-content">
+                <div class="stacked-label stacked-label-content">
+                  {% for char in report.photo_layout.labels.work_content_stacked %}
+                  <span>{{ char }}</span>
+                  {% endfor %}
+                </div>
+              </th>
+              <td class="writing-cell">
+                {% for line in item.work_content.lines %}
+                <div class="writing-line" style="font-size: {{ item.work_content.font_size_pt }}pt;">{{ line if line else "　" }}</div>
+                {% endfor %}
+              </td>
+            </tr>
+            <tr class="photo-info-row photo-writing-row photo-writing-row-remarks photo-layout-{{ item.remarks.layout_mode }}">
+              <th class="stacked-cell stacked-cell-remarks">
+                <div class="stacked-label stacked-label-remarks">
+                  {% for char in report.photo_layout.labels.remarks_stacked %}
+                  <span>{{ char }}</span>
+                  {% endfor %}
+                </div>
+              </th>
+              <td class="writing-cell writing-cell-remarks">
+                {% for line in item.remarks.lines %}
+                <div class="writing-line" style="font-size: {{ item.remarks.font_size_pt }}pt;">{{ line if line else "　" }}</div>
+                {% endfor %}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
     {% endfor %}
   </div>
   {% endfor %}
