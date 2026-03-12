@@ -3,6 +3,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Iterable, Sequence, TypedDict
 
+from work_report_maker.models.validator import require_list, require_mapping, validate_raw_report_data
+
 PHOTO_PAGE_SIZE = 3
 WORK_CONTENT_ROWS = 6
 REMARKS_ROWS = 4
@@ -30,18 +32,6 @@ class WritingSpec(TypedDict):
     line_count: int
     chars_per_line: int
     mode: str
-
-
-def _require_mapping(name: str, value: Any) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise TypeError(f"{name} must be a JSON object.")
-    return value
-
-
-def _require_list(name: str, value: Any) -> list[Any]:
-    if not isinstance(value, list):
-        raise TypeError(f"{name} must be a JSON array.")
-    return value
 
 
 def _normalize_text(value: str | Iterable[str] | None) -> str:
@@ -133,21 +123,21 @@ def _normalize_photo_layout(value: Any) -> dict[str, Any]:
     if value is None:
         return layout
 
-    mapping = _require_mapping("raw_report.photo_layout", value)
+    mapping = require_mapping("raw_report.photo_layout", value)
     labels = mapping.get("labels")
     if labels is None:
         return layout
 
-    label_mapping = _require_mapping("raw_report.photo_layout.labels", labels)
+    label_mapping = require_mapping("raw_report.photo_layout.labels", labels)
     layout["labels"].update(label_mapping)
     return layout
 
 
 def _normalize_info_rows(value: Any) -> list[dict[str, Any]]:
-    rows = _require_list("raw_report.overview.info_rows", value)
+    rows = require_list("raw_report.overview.info_rows", value)
     normalized_rows: list[dict[str, Any]] = []
     for index, row in enumerate(rows, start=1):
-        mapping = _require_mapping(f"raw_report.overview.info_rows[{index}]", row)
+        mapping = require_mapping(f"raw_report.overview.info_rows[{index}]", row)
         normalized_rows.append(
             {
                 "number": mapping["number"],
@@ -160,15 +150,15 @@ def _normalize_info_rows(value: Any) -> list[dict[str, Any]]:
 
 
 def _normalize_work_groups(value: Any) -> list[dict[str, Any]]:
-    groups = _require_list("raw_report.overview.work_groups", value)
+    groups = require_list("raw_report.overview.work_groups", value)
     normalized_groups: list[dict[str, Any]] = []
     for index, group in enumerate(groups, start=1):
-        mapping = _require_mapping(f"raw_report.overview.work_groups[{index}]", group)
+        mapping = require_mapping(f"raw_report.overview.work_groups[{index}]", group)
         normalized_groups.append(
             {
                 "marker": mapping["marker"],
                 "title": mapping["title"],
-                "lines": list(_require_list(f"raw_report.overview.work_groups[{index}].lines", mapping["lines"])),
+                "lines": list(require_list(f"raw_report.overview.work_groups[{index}].lines", mapping["lines"])),
             }
         )
     return normalized_groups
@@ -217,48 +207,21 @@ def _build_photo_entry(item: dict[str, Any]) -> dict[str, object]:
     return photo_entry
 
 
-def validate_raw_report_data(raw_report: dict[str, Any]) -> None:
-    required_top_level_keys = ["title", "cover", "overview", "photos"]
-    missing_keys = [key for key in required_top_level_keys if key not in raw_report]
-    if missing_keys:
-        missing = ", ".join(missing_keys)
-        raise KeyError(f"raw report JSON is missing required top-level keys: {missing}")
-
-    cover = _require_mapping("raw_report.cover", raw_report["cover"])
-    company = _require_mapping("raw_report.cover.company", cover.get("company"))
-    _require_list("raw_report.cover.detail_rows", cover.get("detail_rows"))
-    _require_list("raw_report.cover.company.address_lines", company.get("address_lines"))
-
-    overview = _require_mapping("raw_report.overview", raw_report["overview"])
-    _require_list("raw_report.overview.company_lines", overview.get("company_lines"))
-    _normalize_info_rows(overview.get("info_rows"))
-    _normalize_work_groups(overview.get("work_groups"))
-
-    photos = _require_list("raw_report.photos", raw_report["photos"])
-    required_photo_keys = ["no", "site", "work_date", "location", "photo_path", "work_content", "remarks"]
-    for index, photo in enumerate(photos, start=1):
-        mapping = _require_mapping(f"raw_report.photos[{index}]", photo)
-        missing_photo_keys = [key for key in required_photo_keys if key not in mapping]
-        if missing_photo_keys:
-            missing = ", ".join(missing_photo_keys)
-            raise KeyError(f"raw_report.photos[{index}] is missing required keys: {missing}")
-
-
 def build_report_from_raw(raw_report: dict[str, Any]) -> dict[str, Any]:
     validate_raw_report_data(raw_report)
 
-    cover = _require_mapping("raw_report.cover", raw_report["cover"])
-    overview_raw = _require_mapping("raw_report.overview", raw_report["overview"])
-    photos_raw = _require_list("raw_report.photos", raw_report["photos"])
+    cover = require_mapping("raw_report.cover", raw_report["cover"])
+    overview_raw = require_mapping("raw_report.overview", raw_report["overview"])
+    photos_raw = require_list("raw_report.photos", raw_report["photos"])
 
     blank_lines_value = overview_raw.get("blank_lines")
     if blank_lines_value is None:
         blank_line_count = overview_raw.get("blank_line_count", DEFAULT_BLANK_LINE_COUNT)
         blank_lines = ["　"] * int(blank_line_count)
     else:
-        blank_lines = list(_require_list("raw_report.overview.blank_lines", blank_lines_value))
+        blank_lines = list(require_list("raw_report.overview.blank_lines", blank_lines_value))
 
-    photos = [_build_photo_entry(_require_mapping(f"raw_report.photos[{index}]", item)) for index, item in enumerate(photos_raw, start=1)]
+    photos = [_build_photo_entry(require_mapping(f"raw_report.photos[{index}]", item)) for index, item in enumerate(photos_raw, start=1)]
 
     return {
         "title": raw_report["title"],
@@ -267,11 +230,11 @@ def build_report_from_raw(raw_report: dict[str, Any]) -> dict[str, Any]:
             "date": cover["date"],
             "title": cover["title"],
             "subtitle": cover["subtitle"],
-            "detail_rows": list(_require_list("raw_report.cover.detail_rows", cover["detail_rows"])),
+            "detail_rows": list(require_list("raw_report.cover.detail_rows", cover["detail_rows"])),
             "company": {
                 "name": cover["company"]["name"],
                 "postal_code": cover["company"]["postal_code"],
-                "address_lines": list(_require_list("raw_report.cover.company.address_lines", cover["company"]["address_lines"])),
+                "address_lines": list(require_list("raw_report.cover.company.address_lines", cover["company"]["address_lines"])),
                 "tel_label": cover["company"]["tel_label"],
                 "tel": cover["company"]["tel"],
                 "fax_label": cover["company"]["fax_label"],
@@ -281,7 +244,7 @@ def build_report_from_raw(raw_report: dict[str, Any]) -> dict[str, Any]:
         "overview": {
             "recipient": overview_raw["recipient"],
             "title": overview_raw["title"],
-            "company_lines": list(_require_list("raw_report.overview.company_lines", overview_raw["company_lines"])),
+            "company_lines": list(require_list("raw_report.overview.company_lines", overview_raw["company_lines"])),
             "info_rows": _normalize_info_rows(overview_raw["info_rows"]),
             "work_section_title": overview_raw.get("work_section_title", DEFAULT_WORK_SECTION_TITLE),
             "work_groups": _normalize_work_groups(overview_raw["work_groups"]),
