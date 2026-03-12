@@ -1,4 +1,0 @@
-from work_report_maker.services.pdf_generator import generate_full_report
-
-if __name__ == "__main__":
-    generate_full_report()
