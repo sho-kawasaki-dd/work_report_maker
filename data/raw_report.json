@@ -1,0 +1,184 @@
+{
+  "title": "厨房グリストラップ清掃完了報告書",
+  "cover": {
+    "recipient": "ロワジールホテルクラシックガーデン 京都三条　御中",
+    "date": "2025年 3月 29日",
+    "title": "厨房グリストラップ清掃完了報告書",
+    "subtitle": "ホテル1階厨房",
+    "detail_rows": [
+      {
+        "label": "建物名",
+        "value": "ロワジールホテル クラシックガーデン 京都三条"
+      },
+      {
+        "label": "住　所",
+        "value": "京都市中京区三条烏丸西入る御倉町80番地"
+      },
+      {
+        "label": "日　時",
+        "value": "2025年 3月 27日(木)"
+      }
+    ],
+    "company": {
+      "name": "株式会社京都ダイケンビルサービス",
+      "postal_code": "〒600-8413",
+      "address_lines": [
+        "京都市下京区烏丸通仏光寺下ル大政所町680-1（第八長谷ビル）"
+      ],
+      "tel_label": "TEL：",
+      "tel": "075-342-2611",
+      "fax_label": "FAX：",
+      "fax": "075-342-2660"
+    }
+  },
+  "overview": {
+    "recipient": "ロワジールホテル クラシックガーデン 京都三条　御中",
+    "title": "工 事 完 了 報 告 書",
+    "company_lines": [
+      "京都市下京区烏丸通仏光寺下ル大政所町680-1",
+      "株式会社京都ダイケンビルサービス",
+      "TEL  (075)  342－2611",
+      "FAX  (075)  342－2660"
+    ],
+    "info_rows": [
+      {
+        "number": "1",
+        "label": "施工対象・名称",
+        "value": "ロワジールホテル クラシックガーデン 京都三条",
+        "extra_values": []
+      },
+      {
+        "number": "2",
+        "label": "施工場所",
+        "value": "ホテル1階厨房",
+        "extra_values": []
+      },
+      {
+        "number": "3",
+        "label": "施工内容",
+        "value": "厨房グリストラップ清掃",
+        "extra_values": []
+      },
+      {
+        "number": "4",
+        "label": "施工日時",
+        "value": "2025年 3月 27日(木)",
+        "extra_values": []
+      },
+      {
+        "number": "5",
+        "label": "施工担当",
+        "value": "現場責任者　川崎　潤",
+        "extra_values": [
+          "現場作業者　他 2 名"
+        ]
+      }
+    ],
+    "work_groups": [
+      {
+        "marker": "◎",
+        "title": "厨房グリストラップ清掃",
+        "lines": [
+          "1）作業内容",
+          "① 厨房グリストラップ清掃",
+          "グリストラップ内部の高圧洗浄及び汚泥・バキューム処理。"
+        ]
+      }
+    ],
+    "blank_line_count": 12,
+    "note_line": "※ 仕上り品質報告書 『別紙写真参照』",
+    "ending": "以上"
+  },
+  "photos": [
+    {
+      "no": 1,
+      "site": "LH京都三条",
+      "work_date": "2025年3月27日",
+      "location": "1階厨房",
+      "photo_path": "IMG_20260218_215726354.jpg",
+      "work_content": "清掃箇所遠景",
+      "remarks": "作業前"
+    },
+    {
+      "no": 2,
+      "site": "LH京都三条",
+      "work_date": "2025年3月27日",
+      "location": "1階厨房",
+      "photo_path": "IMG_20260218_215726354.jpg",
+      "work_content": "グリストラップ本槽の内部状況確認",
+      "remarks": "作業前"
+    },
+    {
+      "no": 3,
+      "site": "LH京都三条",
+      "work_date": "2025年3月27日",
+      "location": "1階厨房",
+      "photo_path": "IMG_20260218_215726354.jpg",
+      "work_content": "堆積油脂・汚泥回収後の高圧洗浄状況",
+      "remarks": "洗浄中の状況を記録"
+    },
+    {
+      "no": 4,
+      "site": "LH京都三条",
+      "work_date": "2025年3月27日",
+      "location": "1階厨房",
+      "photo_path": "IMG_20260218_215726354.jpg",
+      "work_content": "バスケット、仕切板、トラップ蓋の取り外し清掃",
+      "remarks": "部材を個別洗浄"
+    },
+    {
+      "no": 5,
+      "site": "LH京都三条",
+      "work_date": "2025年3月27日",
+      "location": "1階厨房",
+      "photo_path": "IMG_20260218_215726354.jpg",
+      "work_content": "槽内壁面と配管入口周辺の油脂分を除去し、異臭発生源を重点洗浄",
+      "remarks": "薬剤使用なし"
+    },
+    {
+      "no": 6,
+      "site": "LH京都三条",
+      "work_date": "2025年3月27日",
+      "location": "1階厨房",
+      "photo_path": "IMG_20260218_215726354.jpg",
+      "work_content": "清掃完了後の水張り確認および復旧後の全景",
+      "remarks": "作業後"
+    },
+    {
+      "no": 7,
+      "site": "LH京都三条",
+      "work_date": "2025年3月27日",
+      "location": "1階厨房",
+      "photo_path": "IMG_20260218_215726354.jpg",
+      "work_content": "グリストラップ周辺床面の洗浄と飛散汚れの拭き上げ完了確認",
+      "remarks": "周辺養生撤去後"
+    },
+    {
+      "no": 8,
+      "site": "LH京都三条",
+      "work_date": "2025年3月27日",
+      "location": "1階厨房",
+      "photo_path": "IMG_20260218_215726354.jpg",
+      "work_content": "取り外し部材を復旧し、排水の流下状況と異常音の有無を確認",
+      "remarks": "排水確認済"
+    },
+    {
+      "no": 9,
+      "site": "LH京都三条",
+      "work_date": "2025年3月27日",
+      "location": "1階厨房",
+      "photo_path": "IMG_20260218_215726354.jpg",
+      "work_content": "槽内最終確認",
+      "remarks": "清掃後"
+    },
+    {
+      "no": 10,
+      "site": "LH京都三条",
+      "work_date": "2025年3月27日",
+      "location": "1階厨房",
+      "photo_path": "IMG_20260218_215726354.jpg",
+      "work_content": "作業完了報告用の引き渡し時点写真。設備外観、周辺床面、付帯部材の復旧状態が判別できるよう広めの構図で撮影",
+      "remarks": "最終引渡し前確認"
+    }
+  ]
+}

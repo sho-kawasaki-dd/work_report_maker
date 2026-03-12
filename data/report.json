@@ -1,0 +1,466 @@
+{
+  "title": "厨房グリストラップ清掃完了報告書",
+  "cover": {
+    "recipient": "ロワジールホテルクラシックガーデン 京都三条　御中",
+    "date": "2025年 3月 29日",
+    "title": "厨房グリストラップ清掃完了報告書",
+    "subtitle": "ホテル1階厨房",
+    "detail_rows": [
+      {
+        "label": "建物名",
+        "value": "ロワジールホテル クラシックガーデン 京都三条"
+      },
+      {
+        "label": "住　所",
+        "value": "京都市中京区三条烏丸西入る御倉町80番地"
+      },
+      {
+        "label": "日　時",
+        "value": "2025年 3月 27日(木)"
+      }
+    ],
+    "company": {
+      "name": "株式会社京都ダイケンビルサービス",
+      "postal_code": "〒600-8413",
+      "address_lines": [
+        "京都市下京区烏丸通仏光寺下ル大政所町680-1（第八長谷ビル）"
+      ],
+      "tel_label": "TEL：",
+      "tel": "075-342-2611",
+      "fax_label": "FAX：",
+      "fax": "075-342-2660"
+    }
+  },
+  "overview": {
+    "recipient": "ロワジールホテル クラシックガーデン 京都三条　御中",
+    "title": "工 事 完 了 報 告 書",
+    "company_lines": [
+      "京都市下京区烏丸通仏光寺下ル大政所町680-1",
+      "株式会社京都ダイケンビルサービス",
+      "TEL  (075)  342－2611",
+      "FAX  (075)  342－2660"
+    ],
+    "info_rows": [
+      {
+        "number": "1",
+        "label": "施工対象・名称",
+        "value": "ロワジールホテル クラシックガーデン 京都三条",
+        "extra_values": []
+      },
+      {
+        "number": "2",
+        "label": "施工場所",
+        "value": "ホテル1階厨房",
+        "extra_values": []
+      },
+      {
+        "number": "3",
+        "label": "施工内容",
+        "value": "厨房グリストラップ清掃",
+        "extra_values": []
+      },
+      {
+        "number": "4",
+        "label": "施工日時",
+        "value": "2025年 3月 27日(木)",
+        "extra_values": []
+      },
+      {
+        "number": "5",
+        "label": "施工担当",
+        "value": "現場責任者　川崎　潤",
+        "extra_values": [
+          "現場作業者　他 2 名"
+        ]
+      }
+    ],
+    "work_section_title": "作業内容",
+    "work_groups": [
+      {
+        "marker": "◎",
+        "title": "厨房グリストラップ清掃",
+        "lines": [
+          "1）作業内容",
+          "① 厨房グリストラップ清掃",
+          "グリストラップ内部の高圧洗浄及び汚泥・バキューム処理。"
+        ]
+      }
+    ],
+    "blank_lines": [
+      "　",
+      "　",
+      "　",
+      "　",
+      "　",
+      "　",
+      "　",
+      "　",
+      "　",
+      "　",
+      "　",
+      "　"
+    ],
+    "note_line": "※ 仕上り品質報告書 『別紙写真参照』",
+    "ending": "以上"
+  },
+  "photo_layout": {
+    "labels": {
+      "status_photo": "状　況　写　真",
+      "description": "写　真　説　明",
+      "photo_no": "写 真 No",
+      "site": "現　場",
+      "work_date": "施 工 日",
+      "location": "施工箇所",
+      "work_content_stacked": [
+        "施",
+        "工",
+        "内",
+        "容"
+      ],
+      "remarks_stacked": [
+        "備",
+        "考"
+      ]
+    }
+  },
+  "photo_pages": [
+    [
+      {
+        "no": 1,
+        "site": "LH京都三条",
+        "work_date": "2025年3月27日",
+        "location": "1階厨房",
+        "photo_path": "IMG_20260218_215726354.jpg",
+        "work_content": {
+          "text": "清掃箇所遠景",
+          "font_size_pt": 9.2,
+          "line_count": 1,
+          "lines": [
+            "清掃箇所遠景",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "compact"
+        },
+        "remarks": {
+          "text": "作業前",
+          "font_size_pt": 8.6,
+          "line_count": 1,
+          "lines": [
+            "作業前",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "compact"
+        }
+      },
+      {
+        "no": 2,
+        "site": "LH京都三条",
+        "work_date": "2025年3月27日",
+        "location": "1階厨房",
+        "photo_path": "IMG_20260218_215726354.jpg",
+        "work_content": {
+          "text": "グリストラップ本槽の内部状況確認",
+          "font_size_pt": 8.6,
+          "line_count": 2,
+          "lines": [
+            "グリストラップ本槽の内部",
+            "状況確認",
+            "",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "standard"
+        },
+        "remarks": {
+          "text": "作業前",
+          "font_size_pt": 8.6,
+          "line_count": 1,
+          "lines": [
+            "作業前",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "compact"
+        }
+      },
+      {
+        "no": 3,
+        "site": "LH京都三条",
+        "work_date": "2025年3月27日",
+        "location": "1階厨房",
+        "photo_path": "IMG_20260218_215726354.jpg",
+        "work_content": {
+          "text": "堆積油脂・汚泥回収後の高圧洗浄状況",
+          "font_size_pt": 8.6,
+          "line_count": 2,
+          "lines": [
+            "堆積油脂・汚泥回収後の高",
+            "圧洗浄状況",
+            "",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "standard"
+        },
+        "remarks": {
+          "text": "洗浄中の状況を記録",
+          "font_size_pt": 8.6,
+          "line_count": 1,
+          "lines": [
+            "洗浄中の状況を記録",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "compact"
+        }
+      }
+    ],
+    [
+      {
+        "no": 4,
+        "site": "LH京都三条",
+        "work_date": "2025年3月27日",
+        "location": "1階厨房",
+        "photo_path": "IMG_20260218_215726354.jpg",
+        "work_content": {
+          "text": "バスケット、仕切板、トラップ蓋の取り外し清掃",
+          "font_size_pt": 8.6,
+          "line_count": 2,
+          "lines": [
+            "バスケット、仕切板、トラ",
+            "ップ蓋の取り外し清掃",
+            "",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "standard"
+        },
+        "remarks": {
+          "text": "部材を個別洗浄",
+          "font_size_pt": 8.6,
+          "line_count": 1,
+          "lines": [
+            "部材を個別洗浄",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "compact"
+        }
+      },
+      {
+        "no": 5,
+        "site": "LH京都三条",
+        "work_date": "2025年3月27日",
+        "location": "1階厨房",
+        "photo_path": "IMG_20260218_215726354.jpg",
+        "work_content": {
+          "text": "槽内壁面と配管入口周辺の油脂分を除去し、異臭発生源を重点洗浄",
+          "font_size_pt": 8.0,
+          "line_count": 3,
+          "lines": [
+            "槽内壁面と配管入口周辺の",
+            "油脂分を除去し、異臭発生",
+            "源を重点洗浄",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "standard"
+        },
+        "remarks": {
+          "text": "薬剤使用なし",
+          "font_size_pt": 8.6,
+          "line_count": 1,
+          "lines": [
+            "薬剤使用なし",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "compact"
+        }
+      },
+      {
+        "no": 6,
+        "site": "LH京都三条",
+        "work_date": "2025年3月27日",
+        "location": "1階厨房",
+        "photo_path": "IMG_20260218_215726354.jpg",
+        "work_content": {
+          "text": "清掃完了後の水張り確認および復旧後の全景",
+          "font_size_pt": 8.6,
+          "line_count": 2,
+          "lines": [
+            "清掃完了後の水張り確認お",
+            "よび復旧後の全景",
+            "",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "standard"
+        },
+        "remarks": {
+          "text": "作業後",
+          "font_size_pt": 8.6,
+          "line_count": 1,
+          "lines": [
+            "作業後",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "compact"
+        }
+      }
+    ],
+    [
+      {
+        "no": 7,
+        "site": "LH京都三条",
+        "work_date": "2025年3月27日",
+        "location": "1階厨房",
+        "photo_path": "IMG_20260218_215726354.jpg",
+        "work_content": {
+          "text": "グリストラップ周辺床面の洗浄と飛散汚れの拭き上げ完了確認",
+          "font_size_pt": 8.0,
+          "line_count": 3,
+          "lines": [
+            "グリストラップ周辺床面の",
+            "洗浄と飛散汚れの拭き上げ",
+            "完了確認",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "standard"
+        },
+        "remarks": {
+          "text": "周辺養生撤去後",
+          "font_size_pt": 8.6,
+          "line_count": 1,
+          "lines": [
+            "周辺養生撤去後",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "compact"
+        }
+      },
+      {
+        "no": 8,
+        "site": "LH京都三条",
+        "work_date": "2025年3月27日",
+        "location": "1階厨房",
+        "photo_path": "IMG_20260218_215726354.jpg",
+        "work_content": {
+          "text": "取り外し部材を復旧し、排水の流下状況と異常音の有無を確認",
+          "font_size_pt": 8.0,
+          "line_count": 3,
+          "lines": [
+            "取り外し部材を復旧し、排",
+            "水の流下状況と異常音の有",
+            "無を確認",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "standard"
+        },
+        "remarks": {
+          "text": "排水確認済",
+          "font_size_pt": 8.6,
+          "line_count": 1,
+          "lines": [
+            "排水確認済",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "compact"
+        }
+      },
+      {
+        "no": 9,
+        "site": "LH京都三条",
+        "work_date": "2025年3月27日",
+        "location": "1階厨房",
+        "photo_path": "IMG_20260218_215726354.jpg",
+        "work_content": {
+          "text": "槽内最終確認",
+          "font_size_pt": 9.2,
+          "line_count": 1,
+          "lines": [
+            "槽内最終確認",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "compact"
+        },
+        "remarks": {
+          "text": "清掃後",
+          "font_size_pt": 8.6,
+          "line_count": 1,
+          "lines": [
+            "清掃後",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "compact"
+        }
+      }
+    ],
+    [
+      {
+        "no": 10,
+        "site": "LH京都三条",
+        "work_date": "2025年3月27日",
+        "location": "1階厨房",
+        "photo_path": "IMG_20260218_215726354.jpg",
+        "work_content": {
+          "text": "作業完了報告用の引き渡し時点写真。設備外観、周辺床面、付帯部材の復旧状態が判別できるよう広めの構図で撮影",
+          "font_size_pt": 7.5,
+          "line_count": 4,
+          "lines": [
+            "作業完了報告用の引き渡し時",
+            "点写真。設備外観、周辺床面",
+            "、付帯部材の復旧状態が判別",
+            "できるよう広めの構図で撮影",
+            "",
+            ""
+          ],
+          "layout_mode": "dense"
+        },
+        "remarks": {
+          "text": "最終引渡し前確認",
+          "font_size_pt": 8.6,
+          "line_count": 1,
+          "lines": [
+            "最終引渡し前確認",
+            "",
+            "",
+            ""
+          ],
+          "layout_mode": "compact"
+        }
+      }
+    ]
+  ]
+}

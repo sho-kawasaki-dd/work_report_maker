@@ -1,6 +1,7 @@
 # work-report-maker
 
 このプロジェクトは、Jinja2 で組み立てた HTML を WeasyPrint で PDF に変換して、現場写真付きの業務報告書を生成します。
+標準入力は GUI と相性のよい raw JSON で、[main.py](main.py) がそれを Jinja 用の完成形 `report` に変換して PDF を生成します。
 
 ## WeasyPrint の依存関係
 
@@ -42,7 +43,31 @@ uv run .\main.py
 
 正常に実行されると、プロジェクトルートに `full_report.pdf` が出力されます。
 
+## 入力データ
+
+- 標準のサンプル入力は [data/raw_report.json](data/raw_report.json) にあります。
+- raw JSON では、写真は `photos` の一次元配列で管理します。ページ分割、行分割、`font_size_pt`、`layout_mode` は Python 側で補完します。
+- HTML テンプレートは [templates/report_tmp.html](templates/report_tmp.html) で、Jinja には完成形の `report` が渡されます。
+- 写真の `photo_path` には、プロジェクトルート基準の相対パス、絶対パス、`file://` URI のいずれも使えます。存在しない場合はテンプレート側でプレースホルダ表示になります。
+
+GUI を追加する場合は、フォーム入力を raw JSON と同じ構造の辞書にまとめて [main.py](main.py) の `generate_full_report(...)` に渡せます。`photo_pages` や `lines` を GUI 側で組み立てる必要はありません。
+
+```python
+from pathlib import Path
+
+from main import generate_full_report, load_input_data
+
+raw_report = load_input_data(Path("data/raw_report.json"))
+generate_full_report(report_data=raw_report)
+```
+
+raw JSON を差し替えるだけでレポート内容を変更したい場合は、[data/raw_report.json](data/raw_report.json) を編集してから再度 `uv run .\main.py` を実行してください。
+
+移行期間中は、従来の完成形 JSON である [data/report.json](data/report.json) も引き続き読み込めます。こちらはデバッグ用、比較用、変換結果の確認用と考えてください。
+
 ## 補足
 
 - 現在の同梱構成は Windows での実行を前提にしています。
 - 画像 loader cache を追加で同梱していないため、画像読み込みで問題が出る場合は `gdk-pixbuf` の cache 生成を追加検討してください。
+- [main.py](main.py) には `load_input_data(...)`, `load_report_data(...)`, `prepare_report_for_render(...)`, `generate_full_report(...)` を用意してあり、GUI 実装時はこの入口を再利用できます。
+- raw JSON から完成形への変換ロジックは [backend/report_adapter.py](backend/report_adapter.py) に分離してあります。

@@ -1,27 +1,22 @@
 from __future__ import annotations
 
+import json
 import os
+from copy import deepcopy
 from pathlib import Path
-from typing import Iterable, Sequence, TypedDict
+from typing import Any
 
 from jinja2 import Environment, FileSystemLoader
+
+from backend.report_adapter import build_report_from_raw
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEPENDENCIES_DIR = PROJECT_ROOT / "dependencies"
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
+DEFAULT_REPORT_JSON = PROJECT_ROOT / "data" / "raw_report.json"
+LEGACY_REPORT_JSON = PROJECT_ROOT / "data" / "report.json"
 OUTPUT_PDF = PROJECT_ROOT / "full_report.pdf"
 _DLL_DIRECTORIES: list[object] = []
-PHOTO_PAGE_SIZE = 3
-WORK_CONTENT_ROWS = 6
-REMARKS_ROWS = 4
-
-
-class WritingSpec(TypedDict):
-    max_chars: int
-    font_size_pt: float
-    line_count: int
-    chars_per_line: int
-    mode: str
 
 
 def _prepend_env_path(name: str, value: Path) -> None:
@@ -77,13 +72,11 @@ except OSError as exc:
     ) from exc
 
 
-def _chunked(items: Sequence[dict[str, object]], size: int) -> list[list[dict[str, object]]]:
-    return [list(items[index:index + size]) for index in range(0, len(items), size)]
-
-
 def _resolve_photo_uri(photo_path: str | None) -> str | None:
     if not photo_path:
         return None
+    if photo_path.startswith("file://"):
+        return photo_path
 
     resolved_path = Path(photo_path)
     if not resolved_path.is_absolute():
@@ -93,299 +86,153 @@ def _resolve_photo_uri(photo_path: str | None) -> str | None:
     return resolved_path.resolve().as_uri()
 
 
-def _normalize_text(value: str | Iterable[str] | None) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value.strip()
-    return "\n".join(str(item).strip() for item in value if str(item).strip()).strip()
+def _require_mapping(name: str, value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise TypeError(f"{name} must be a JSON object.")
+    return value
 
 
-def _wrap_text(text: str, chars_per_line: int, max_lines: int) -> list[str]:
-    normalized = _normalize_text(text)
-    if not normalized:
-        return []
-
-    wrapped_lines: list[str] = []
-    for paragraph in normalized.splitlines():
-        paragraph = paragraph.strip()
-        if not paragraph:
-            wrapped_lines.append("")
-            continue
-
-        while len(paragraph) > chars_per_line:
-            wrapped_lines.append(paragraph[:chars_per_line])
-            paragraph = paragraph[chars_per_line:]
-        wrapped_lines.append(paragraph)
-
-    if len(wrapped_lines) <= max_lines:
-        return wrapped_lines
-
-    visible_lines = wrapped_lines[:max_lines]
-    overflow = "".join(wrapped_lines[max_lines - 1:])
-    visible_lines[-1] = overflow[:chars_per_line]
-    return visible_lines
+def _require_list(name: str, value: Any) -> list[Any]:
+    if not isinstance(value, list):
+        raise TypeError(f"{name} must be a JSON array.")
+    return value
 
 
-def _build_writing_block(
-    text: str | Iterable[str] | None,
+def _detect_report_format(report_data: dict[str, Any]) -> str:
+    has_photo_pages = "photo_pages" in report_data
+    has_photos = "photos" in report_data
+
+    if has_photo_pages and has_photos:
+        raise ValueError("Report input must contain either photo_pages or photos, not both.")
+    if has_photo_pages:
+        return "render-ready"
+    if has_photos:
+        return "raw"
+
+    raise ValueError("Report input must contain either photo_pages or photos.")
+
+
+def _validate_report_data(report_data: dict[str, Any]) -> None:
+    required_top_level_keys = ["title", "cover", "overview", "photo_layout", "photo_pages"]
+    missing_keys = [key for key in required_top_level_keys if key not in report_data]
+    if missing_keys:
+        missing = ", ".join(missing_keys)
+        raise KeyError(f"report JSON is missing required top-level keys: {missing}")
+
+    cover = _require_mapping("report.cover", report_data["cover"])
+    cover_company = _require_mapping("report.cover.company", cover.get("company"))
+    _require_list("report.cover.detail_rows", cover.get("detail_rows"))
+    _require_list("report.cover.company.address_lines", cover_company.get("address_lines"))
+
+    overview = _require_mapping("report.overview", report_data["overview"])
+    _require_list("report.overview.company_lines", overview.get("company_lines"))
+    info_rows = _require_list("report.overview.info_rows", overview.get("info_rows"))
+    work_groups = _require_list("report.overview.work_groups", overview.get("work_groups"))
+    _require_list("report.overview.blank_lines", overview.get("blank_lines"))
+
+    for index, row in enumerate(info_rows, start=1):
+        mapping = _require_mapping(f"report.overview.info_rows[{index}]", row)
+        _require_list(f"report.overview.info_rows[{index}].extra_values", mapping.get("extra_values"))
+
+    for index, group in enumerate(work_groups, start=1):
+        mapping = _require_mapping(f"report.overview.work_groups[{index}]", group)
+        _require_list(f"report.overview.work_groups[{index}].lines", mapping.get("lines"))
+
+    photo_layout = _require_mapping("report.photo_layout", report_data["photo_layout"])
+    labels = _require_mapping("report.photo_layout.labels", photo_layout.get("labels"))
+    _require_list("report.photo_layout.labels.work_content_stacked", labels.get("work_content_stacked"))
+    _require_list("report.photo_layout.labels.remarks_stacked", labels.get("remarks_stacked"))
+
+    photo_pages = _require_list("report.photo_pages", report_data["photo_pages"])
+    for page_index, page in enumerate(photo_pages, start=1):
+        page_items = _require_list(f"report.photo_pages[{page_index}]", page)
+        for item_index, item in enumerate(page_items, start=1):
+            mapping = _require_mapping(f"report.photo_pages[{page_index}][{item_index}]", item)
+            _require_mapping(
+                f"report.photo_pages[{page_index}][{item_index}].work_content",
+                mapping.get("work_content"),
+            )
+            _require_mapping(
+                f"report.photo_pages[{page_index}][{item_index}].remarks",
+                mapping.get("remarks"),
+            )
+
+
+def _resolve_input_path(json_path: Path | None = None) -> Path:
+    source_path = json_path or DEFAULT_REPORT_JSON
+    if not source_path.is_absolute():
+        source_path = PROJECT_ROOT / source_path
+
+    if json_path is None and not source_path.exists() and LEGACY_REPORT_JSON.exists():
+        return LEGACY_REPORT_JSON
+
+    return source_path
+
+
+def _load_json_file(json_path: Path | None = None) -> dict[str, Any]:
+    source_path = _resolve_input_path(json_path)
+
+    try:
+        with source_path.open("r", encoding="utf-8") as file:
+            report_data = json.load(file)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"Report JSON file was not found: {source_path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Report JSON could not be parsed: {source_path}") from exc
+
+    if not isinstance(report_data, dict):
+        raise TypeError("Report JSON root must be a JSON object.")
+
+    return report_data
+
+
+def _normalize_report_data(report_data: dict[str, Any]) -> dict[str, Any]:
+    report_format = _detect_report_format(report_data)
+    normalized_report = build_report_from_raw(report_data) if report_format == "raw" else deepcopy(report_data)
+
+    _validate_report_data(normalized_report)
+    return normalized_report
+
+
+def load_input_data(json_path: Path | None = None) -> dict[str, Any]:
+    return _load_json_file(json_path)
+
+
+def load_report_data(json_path: Path | None = None) -> dict[str, Any]:
+    return _normalize_report_data(load_input_data(json_path))
+
+
+def prepare_report_for_render(report_data: dict[str, Any]) -> dict[str, Any]:
+    prepared_report = _normalize_report_data(report_data)
+
+    for page in prepared_report["photo_pages"]:
+        for item in page:
+            photo_path = item.get("photo_path")
+            item["photo_path"] = _resolve_photo_uri(photo_path if isinstance(photo_path, str) else None)
+
+    return prepared_report
+
+
+def build_report_context(json_path: Path | None = None) -> dict[str, Any]:
+    return prepare_report_for_render(load_input_data(json_path))
+
+
+def generate_full_report(
+    report_data: dict[str, Any] | None = None,
     *,
-    max_rows: int,
-    specs: Sequence[WritingSpec],
-) -> dict[str, object]:
-    normalized = _normalize_text(text)
-    compact_text = normalized.replace("\n", "").replace(" ", "")
-    char_count = len(compact_text)
+    json_path: Path | None = None,
+    output_path: Path = OUTPUT_PDF,
+) -> None:
+    if report_data is not None and json_path is not None:
+        raise ValueError("Pass either report_data or json_path, not both.")
 
-    chosen_spec: WritingSpec = specs[-1]
-    for spec in specs:
-        if char_count <= spec["max_chars"]:
-            chosen_spec = spec
-            break
-
-    lines = _wrap_text(
-        normalized,
-        chars_per_line=chosen_spec["chars_per_line"],
-        max_lines=chosen_spec["line_count"],
-    )
-    padded_lines = lines + [""] * max(0, max_rows - len(lines))
-
-    return {
-        "text": normalized,
-        "font_size_pt": chosen_spec["font_size_pt"],
-        "line_count": len(lines),
-        "lines": padded_lines[:max_rows],
-        "layout_mode": chosen_spec["mode"],
-    }
-
-
-def _build_photo_entry(item: dict[str, object]) -> dict[str, object]:
-    photo_path = item.get("photo_path")
-    work_content = item.get("work_content")
-    remarks = item.get("remarks")
-
-    work_content_specs: list[WritingSpec] = [
-        {"max_chars": 12, "font_size_pt": 9.2, "line_count": 1, "chars_per_line": 12, "mode": "compact"},
-        {"max_chars": 24, "font_size_pt": 8.6, "line_count": 2, "chars_per_line": 12, "mode": "standard"},
-        {"max_chars": 36, "font_size_pt": 8.0, "line_count": 3, "chars_per_line": 12, "mode": "standard"},
-        {"max_chars": 52, "font_size_pt": 7.5, "line_count": 4, "chars_per_line": 13, "mode": "dense"},
-        {"max_chars": 70, "font_size_pt": 7.0, "line_count": 5, "chars_per_line": 14, "mode": "dense"},
-        {"max_chars": 999, "font_size_pt": 6.6, "line_count": 6, "chars_per_line": 14, "mode": "dense"},
-    ]
-    remarks_specs: list[WritingSpec] = [
-        {"max_chars": 10, "font_size_pt": 8.6, "line_count": 1, "chars_per_line": 10, "mode": "compact"},
-        {"max_chars": 20, "font_size_pt": 7.9, "line_count": 2, "chars_per_line": 10, "mode": "standard"},
-        {"max_chars": 30, "font_size_pt": 7.3, "line_count": 3, "chars_per_line": 10, "mode": "dense"},
-        {"max_chars": 999, "font_size_pt": 6.8, "line_count": 4, "chars_per_line": 11, "mode": "dense"},
-    ]
-
-    return {
-        "no": item["no"],
-        "site": item["site"],
-        "work_date": item["work_date"],
-        "location": item["location"],
-        "photo_path": _resolve_photo_uri(photo_path if isinstance(photo_path, str) else None),
-        "work_content": _build_writing_block(
-            work_content if isinstance(work_content, str | list | tuple) else None,
-            max_rows=WORK_CONTENT_ROWS,
-            specs=work_content_specs,
-        ),
-        "remarks": _build_writing_block(
-            remarks if isinstance(remarks, str | list | tuple) else None,
-            max_rows=REMARKS_ROWS,
-            specs=remarks_specs,
-        ),
-    }
-
-
-def build_report_context() -> dict[str, object]:
-    company = {
-        "name": "株式会社京都ダイケンビルサービス",
-        "postal_code": "〒600-8413",
-        "address_lines": [
-            "京都市下京区烏丸通仏光寺下ル大政所町680-1（第八長谷ビル）",
-        ],
-        "tel_label": "TEL：",
-        "tel": "075-342-2611",
-        "fax_label": "FAX：",
-        "fax": "075-342-2660",
-    }
-
-    overview_company_lines = [
-        "京都市下京区烏丸通仏光寺下ル大政所町680-1",
-        "株式会社京都ダイケンビルサービス",
-        "TEL  (075)  342－2611",
-        "FAX  (075)  342－2660",
-    ]
-
-    sample_images = [
-        "IMG_20260218_215726354.jpg",
-        "IMG_20260218_215726354.jpg",
-        "IMG_20260218_215726354.jpg",
-    ]
-    raw_photos = [
-        {
-            "no": 1,
-            "site": "LH京都三条",
-            "work_date": "2025年3月27日",
-            "location": "1階厨房",
-            "work_content": "清掃箇所遠景",
-            "remarks": "作業前",
-            "photo_path": sample_images[0],
-        },
-        {
-            "no": 2,
-            "site": "LH京都三条",
-            "work_date": "2025年3月27日",
-            "location": "1階厨房",
-            "work_content": "グリストラップ本槽の内部状況確認",
-            "remarks": "作業前",
-            "photo_path": sample_images[1],
-        },
-        {
-            "no": 3,
-            "site": "LH京都三条",
-            "work_date": "2025年3月27日",
-            "location": "1階厨房",
-            "work_content": "堆積油脂・汚泥回収後の高圧洗浄状況",
-            "remarks": "洗浄中の状況を記録",
-            "photo_path": sample_images[2],
-        },
-        {
-            "no": 4,
-            "site": "LH京都三条",
-            "work_date": "2025年3月27日",
-            "location": "1階厨房",
-            "work_content": "バスケット、仕切板、トラップ蓋の取り外し清掃",
-            "remarks": "部材を個別洗浄",
-            "photo_path": sample_images[0],
-        },
-        {
-            "no": 5,
-            "site": "LH京都三条",
-            "work_date": "2025年3月27日",
-            "location": "1階厨房",
-            "work_content": "槽内壁面と配管入口周辺の油脂分を除去し、異臭発生源を重点洗浄",
-            "remarks": "薬剤使用なし",
-            "photo_path": sample_images[1],
-        },
-        {
-            "no": 6,
-            "site": "LH京都三条",
-            "work_date": "2025年3月27日",
-            "location": "1階厨房",
-            "work_content": "清掃完了後の水張り確認および復旧後の全景",
-            "remarks": "作業後",
-            "photo_path": sample_images[2],
-        },
-        {
-            "no": 7,
-            "site": "LH京都三条",
-            "work_date": "2025年3月27日",
-            "location": "1階厨房",
-            "work_content": "グリストラップ周辺床面の洗浄と飛散汚れの拭き上げ完了確認",
-            "remarks": "周辺養生撤去後",
-            "photo_path": sample_images[0],
-        },
-        {
-            "no": 8,
-            "site": "LH京都三条",
-            "work_date": "2025年3月27日",
-            "location": "1階厨房",
-            "work_content": "取り外し部材を復旧し、排水の流下状況と異常音の有無を確認",
-            "remarks": "排水確認済",
-            "photo_path": sample_images[1],
-        },
-        {
-            "no": 9,
-            "site": "LH京都三条",
-            "work_date": "2025年3月27日",
-            "location": "1階厨房",
-            "work_content": "槽内最終確認",
-            "remarks": "清掃後",
-            "photo_path": sample_images[2],
-        },
-        {
-            "no": 10,
-            "site": "LH京都三条",
-            "work_date": "2025年3月27日",
-            "location": "1階厨房",
-            "work_content": "作業完了報告用の引き渡し時点写真。設備外観、周辺床面、付帯部材の復旧状態が判別できるよう広めの構図で撮影",
-            "remarks": "最終引渡し前確認",
-            "photo_path": sample_images[0],
-        },
-    ]
-    photos = [_build_photo_entry(item) for item in raw_photos]
-
-    return {
-        "title": "厨房グリストラップ清掃完了報告書",
-        "cover": {
-            "recipient": "ロワジールホテルクラシックガーデン 京都三条　御中",
-            "date": "2025年 3月 29日",
-            "title": "厨房グリストラップ清掃完了報告書",
-            "subtitle": "ホテル1階厨房",
-            "detail_rows": [
-                {"label": "建物名", "value": "ロワジールホテル クラシックガーデン 京都三条"},
-                {"label": "住　所", "value": "京都市中京区三条烏丸西入る御倉町80番地"},
-                {"label": "日　時", "value": "2025年 3月 27日(木)"},
-            ],
-            "company": company,
-        },
-        "overview": {
-            "recipient": "ロワジールホテル クラシックガーデン 京都三条　御中",
-            "title": "工 事 完 了 報 告 書",
-            "company_lines": overview_company_lines,
-            "info_rows": [
-                {"number": "1", "label": "施工対象・名称", "value": "ロワジールホテル クラシックガーデン 京都三条", "extra_values": []},
-                {"number": "2", "label": "施工場所", "value": "ホテル1階厨房", "extra_values": []},
-                {"number": "3", "label": "施工内容", "value": "厨房グリストラップ清掃", "extra_values": []},
-                {"number": "4", "label": "施工日時", "value": "2025年 3月 27日(木)", "extra_values": []},
-                {
-                    "number": "5",
-                    "label": "施工担当",
-                    "value": "現場責任者　川崎　潤",
-                    "extra_values": ["現場作業者　他 2 名"],
-                },
-            ],
-            "work_section_title": "作業内容",
-            "work_groups": [
-                {
-                    "marker": "◎",
-                    "title": "厨房グリストラップ清掃",
-                    "lines": [
-                        "1）作業内容",
-                        "① 厨房グリストラップ清掃",
-                        "グリストラップ内部の高圧洗浄及び汚泥・バキューム処理。",
-                    ],
-                }
-            ],
-            "blank_lines": ["　"] * 12,
-            "note_line": "※ 仕上り品質報告書 『別紙写真参照』",
-            "ending": "以上",
-        },
-        "photo_layout": {
-            "labels": {
-                "status_photo": "状　況　写　真",
-                "description": "写　真　説　明",
-                "photo_no": "写 真 No",
-                "site": "現　場",
-                "work_date": "施 工 日",
-                "location": "施工箇所",
-                "work_content_stacked": ["施", "工", "内", "容"],
-                "remarks_stacked": ["備", "考"],
-            }
-        },
-        "photo_pages": _chunked(photos, PHOTO_PAGE_SIZE),
-    }
-
-
-def generate_full_report() -> None:
     env = Environment(loader=FileSystemLoader(TEMPLATES_DIR), trim_blocks=True, lstrip_blocks=True)
     template = env.get_template("report_tmp.html")
 
-    html_content = template.render(report=build_report_context())
+    report_context = prepare_report_for_render(report_data) if report_data is not None else build_report_context(json_path)
+    html_content = template.render(report=report_context)
 
-    HTML(string=html_content, base_url=str(TEMPLATES_DIR.resolve())).write_pdf(OUTPUT_PDF)
+    HTML(string=html_content, base_url=str(TEMPLATES_DIR.resolve())).write_pdf(output_path)
 
 
 if __name__ == "__main__":
