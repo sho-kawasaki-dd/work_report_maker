@@ -3,7 +3,7 @@
 報告書の表紙に記載する以下の項目を入力する:
     (1) 報告書作成年月日  — QDateEdit（カレンダーポップアップ付き）
     (2) 提出先            — QLineEdit + 「御中」自動付与
-    (3) 報告書名          — QLineEdit
+    (3) 工事・作業名      — QLineEdit（出力時に末尾へ「完了報告書」を自動付与）
     (4) 作業場所名        — QLineEdit（テンプレートの subtitle に対応）
     (5) 建物名            — QLineEdit（建物プリセットから呼び出し可能）
     (6) 住所              — QLineEdit（建物プリセットから呼び出し可能）
@@ -71,7 +71,7 @@ class CoverFormPage(QWizardPage):
     フォーム項目:
         (1) 報告書作成年月日 — QDateEdit (カレンダーポップアップ、デフォルト=今日)
         (2) 提出先          — QLineEdit + 右端に「御中」ラベルを固定表示
-        (3) 報告書名        — QLineEdit
+        (3) 工事・作業名    — QLineEdit (出力時に末尾へ「完了報告書」を自動付与)
         (4) 作業場所名      — QLineEdit (テンプレートの subtitle に対応)
         (5) 建物名          — QLineEdit
         (6) 住所            — QLineEdit
@@ -102,8 +102,11 @@ class CoverFormPage(QWizardPage):
         recipient_row.addWidget(self._recipient_edit, 1)
         recipient_row.addWidget(QLabel("御中"))
 
-        # ── (3) 報告書名 ──
+        # ── (3) 工事・作業名 ──
+        # 出力時に末尾へ「完了報告書」を自動付与する。
+        # 例: 入力「厨房グリストラップ清掃」→ 表紙タイトル「厨房グリストラップ清掃完了報告書」
         self._title_edit = QLineEdit()
+        self._title_edit.setPlaceholderText("例: 厨房グリストラップ清掃")
 
         # ── (4) 作業場所名 ──
         # テンプレート HTML の cover.subtitle に対応する項目。
@@ -165,7 +168,7 @@ class CoverFormPage(QWizardPage):
         form = QFormLayout()
         form.addRow("報告書作成年月日", self._report_date)
         form.addRow("提出先", recipient_row)
-        form.addRow("報告書名", self._title_edit)
+        form.addRow("工事・作業名", self._title_edit)
         form.addRow("作業場所名", self._subtitle_edit)
         form.addRow("建物名", self._building_edit)
         form.addRow("住所", self._address_edit)
@@ -223,6 +226,24 @@ class CoverFormPage(QWizardPage):
         """会社情報編集ダイアログを開く。保存はダイアログ内で完結する。"""
         CompanyEditorDialog(self).exec()
 
+    # ── 公開アクセサ（OverviewFormPage から参照） ─────────────
+
+    def building_name(self) -> str:
+        """建物名フィールドの現在値を返す。"""
+        return self._building_edit.text().strip()
+
+    def subtitle(self) -> str:
+        """作業場所名フィールドの現在値を返す。"""
+        return self._subtitle_edit.text().strip()
+
+    def title_text(self) -> str:
+        """工事・作業名フィールドの現在値を返す（「完了報告書」なし）。"""
+        return self._title_edit.text().strip()
+
+    def recipient_text(self) -> str:
+        """提出先フィールドの現在値を返す（「御中」なし）。"""
+        return self._recipient_edit.text().strip()
+
     # ── データ収集 ────────────────────────────────────────
 
     def format_work_date(self) -> str:
@@ -264,7 +285,8 @@ class CoverFormPage(QWizardPage):
         return {
             "date": _format_date_jp(self._report_date.date()),
             "recipient": recipient_text,
-            "title": self._title_edit.text().strip(),
+            # 工事・作業名の末尾に「完了報告書」を自動付与してタイトルを生成
+            "title": self._title_edit.text().strip() + "完了報告書" if self._title_edit.text().strip() else "",
             "subtitle": self._subtitle_edit.text().strip(),
             "detail_rows": [
                 {"label": "建物名", "value": self._building_edit.text().strip()},
