@@ -190,6 +190,31 @@ def test_zoom_slider_uses_percentage_range(qtbot) -> None:
     assert arrange_page._zoom_label.text() == "サムネイルサイズ: 200%"
 
 
+def test_public_single_photo_move_api_reuses_arrange_order_logic(qtbot) -> None:
+    wizard, _, arrange_page = _create_page(["a.jpg", "b.jpg", "c.jpg"], qtbot)
+
+    photo_b = arrange_page.collect_photo_items()[1]
+    new_row = arrange_page.move_photo_item_left(photo_b)
+
+    assert new_row == 0
+    assert _photo_names(arrange_page) == ["b.jpg", "a.jpg", "c.jpg"]
+
+    moved_again = arrange_page.move_photo_item_right(photo_b)
+
+    assert moved_again == 1
+    assert _photo_names(arrange_page) == ["a.jpg", "b.jpg", "c.jpg"]
+
+
+def test_public_single_photo_move_api_returns_none_at_edges(qtbot) -> None:
+    wizard, _, arrange_page = _create_page(["a.jpg", "b.jpg"], qtbot)
+
+    first_photo, second_photo = arrange_page.collect_photo_items()
+
+    assert arrange_page.move_photo_item_left(first_photo) is None
+    assert arrange_page.move_photo_item_right(second_photo) is None
+    assert _photo_names(arrange_page) == ["a.jpg", "b.jpg"]
+
+
 def test_zoom_slider_snaps_to_25_percent_steps(qtbot) -> None:
     wizard, _, arrange_page = _create_page(["a.jpg"], qtbot)
 

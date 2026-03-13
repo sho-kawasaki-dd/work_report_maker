@@ -431,6 +431,13 @@ class PhotoArrangePage(QWizardPage):
             return None
         return self._photo_items_by_key.get(key)
 
+    def _row_for_photo(self, photo: PhotoItem) -> int | None:
+        # PhotoItem 実体から現在の表示行を逆引きする。
+        for row in range(self._model.rowCount()):
+            if self._photo_for_row(row) is photo:
+                return row
+        return None
+
     def _make_model_item(self, photo: PhotoItem) -> QStandardItem:
         # 実データ本体は PhotoItem 側にあるので、モデル項目は表示用の薄いラッパーに留める。
         # テキストは後で現在行番号から再計算するため、ここでは空で作る。
@@ -647,18 +654,50 @@ class PhotoArrangePage(QWizardPage):
     def _move_single_selection_left(self) -> None:
         # Ctrl+左は単一選択時だけ有効にする。
         row = self._single_selected_row()
-        if row is None or row == 0:
+        if row is None:
             return
-        new_rows = self._move_rows_to([row], row - 1)
+        photo = self._photo_for_row(row)
+        if photo is None:
+            return
+        new_row = self.move_photo_item_left(photo)
+        if new_row is None:
+            return
+        new_rows = [new_row]
         self._select_rows(new_rows)
 
     def _move_single_selection_right(self) -> None:
         # Ctrl+右は単一選択時だけ有効にする。
         row = self._single_selected_row()
-        if row is None or row >= self._model.rowCount() - 1:
+        if row is None:
             return
-        new_rows = self._move_rows_to([row], row + 2)
+        photo = self._photo_for_row(row)
+        if photo is None:
+            return
+        new_row = self.move_photo_item_right(photo)
+        if new_row is None:
+            return
+        new_rows = [new_row]
         self._select_rows(new_rows)
+
+    def move_photo_item_left(self, photo: PhotoItem) -> int | None:
+        """指定した PhotoItem を 1 つ前へ移動し、新しい行番号を返す。"""
+        row = self._row_for_photo(photo)
+        if row is None or row == 0:
+            return None
+        new_rows = self._move_rows_to([row], row - 1)
+        if not new_rows:
+            return None
+        return new_rows[0]
+
+    def move_photo_item_right(self, photo: PhotoItem) -> int | None:
+        """指定した PhotoItem を 1 つ後ろへ移動し、新しい行番号を返す。"""
+        row = self._row_for_photo(photo)
+        if row is None or row >= self._model.rowCount() - 1:
+            return None
+        new_rows = self._move_rows_to([row], row + 2)
+        if not new_rows:
+            return None
+        return new_rows[0]
 
     # ── 追加操作 ──────────────────────────────────────────
 

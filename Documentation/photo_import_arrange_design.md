@@ -1,19 +1,20 @@
-# 画像読み込み・並び替えウィザード 設計ドキュメント
+# 写真インポート・並び替え・説明入力ウィザード 設計ドキュメント
 
 ## 概要
 
-テンプレート 3 ページ目以降の写真ページ用に、画像の読み込み（フォルダ一括 / ファイル選択 / ZIP 対応）・圧縮・並び替え・追加・削除機能を提供する。
+テンプレート 3 ページ目以降の写真ページ用に、画像の読み込み（フォルダ一括 / ファイル選択 / ZIP 対応）・圧縮・並び替え・追加・削除・写真説明入力機能を提供する。
 
 ## 機能概要
 
-| 機能         | 説明                                                     |
-| ------------ | -------------------------------------------------------- |
-| 画像読み込み | フォルダ一括、ファイル個別選択、ZIP 自動展開（再帰対応） |
-| 圧縮         | DPI 指定リサイズ + JPEG/PNG 品質指定圧縮                 |
-| 4:3 クロップ | テンプレート枠に合わせてアスペクト比 4:3 に中央クロップ  |
-| 並び替え     | ドラッグ＆ドロップ、← → 矢印ボタン（複数選択対応）       |
-| 追加         | 並び替え画面から直接ファイル追加（同じ圧縮設定を適用）   |
-| 削除         | 選択中の写真を確認ダイアログ付きで削除                   |
+| 機能         | 説明                                                                |
+| ------------ | ------------------------------------------------------------------- |
+| 画像読み込み | フォルダ一括、ファイル個別選択、ZIP 自動展開（再帰対応）            |
+| 圧縮         | DPI 指定リサイズ + JPEG/PNG 品質指定圧縮                            |
+| 4:3 クロップ | テンプレート枠に合わせてアスペクト比 4:3 に中央クロップ             |
+| 並び替え     | ドラッグ＆ドロップ、← → 矢印ボタン、Step 7 からの前後 1 件移動      |
+| 追加         | 並び替え画面から直接ファイル追加（同じ圧縮設定を適用）              |
+| 削除         | 選択中の写真を確認ダイアログ付きで削除                              |
+| 写真説明     | 1/2/4 枚表示、PageUp/PageDown、フォーカス連動、説明値の最終出力連携 |
 
 ## アーキテクチャ
 
@@ -23,6 +24,7 @@
 services/image_processor.py    ← GUI 非依存のコアロジック
 gui/pages/photo_import_page.py ← Step 5: インポート UI
 gui/pages/photo_arrange_page.py← Step 6: 並び替え UI
+gui/pages/photo_description_page.py ← Step 7: 写真説明 UI
 gui/main_window.py             ← ウィザード統合
 config.py                      ← 定数 (PHOTO_WIDTH_MM, PHOTO_HEIGHT_MM 等)
 ```
@@ -39,13 +41,16 @@ collect_image_paths()  ← パス収集 (ZIP 展開含む)
 process_image()        ← load → 4:3 クロップ → リサイズ → 圧縮
         │
         ▼
-PhotoItem(filename, data, format, thumbnail)  ← メモリ上に保持
+PhotoItem(filename, data, format, thumbnail, ...description fields) ← メモリ上に保持
         │
         ▼
 PhotoImportPage._photo_items  ← リスト管理
         │
         ▼
 PhotoArrangePage (QStandardItemModel)  ← 並び替え・追加・削除
+        │
+        ▼
+PhotoDescriptionPage          ← 説明編集・限定移動・既定値再同期
         │
         ▼
 ReportWizard.accept() → _build_photos()
@@ -81,10 +86,16 @@ class PhotoItem:
     data: bytes                      # 圧縮済みバイト列
     format: str                      # "jpeg" or "png"
     thumbnail: QImage | None = None  # サムネイル用 (最大辺 128px, KeepAspectRatio)
+        site: str = ""
+        work_date: str = ""
+        location: str = ""
+        work_content: str = ""
+        remarks: str = ""
 ```
 
 - bytes でメモリ保持（ファイル I/O を最小化）
 - サムネイルは QImage で保持し、表示時に `QPixmap.fromImage()` で変換
+- `site` `work_date` `location` には既定値スナップショットとユーザー編集フラグが紐づき、未編集項目だけ最新の表紙 / 工事概要値へ再同期される
 
 ### PhotoImportPage (Step 5)
 
@@ -96,6 +107,7 @@ class PhotoItem:
   - バッチ処理: `_ITEM_BATCH_SIZE = 8` 件ごとに `items_ready` シグナルを送出し UI 更新回数を抑制
   - エラー処理: 個別の画像失敗は記録し、完了後に `_format_failure_message()` で先頭 3 件 + 残数を要約表示
 - **ページ間同期**: `add_photo_items()` / `remove_photo_items()` で PhotoArrangePage との双方向同期
+- **既定値同期**: 追加時に `PhotoDescriptionDefaults` を注入し、`sync_photo_item_defaults()` で保持中の PhotoItem に未編集項目のみ再同期
 - **クリーンアップ**: `cancel_active_import()` でスレッド停止。`ReportWizard.closeEvent()` から呼び出される
 
 ### PhotoArrangePage (Step 6)
@@ -111,7 +123,18 @@ class PhotoItem:
 - **ページ区切り**: `_PageBorderDelegate` で 3 枚ごとに破線描画
 - **内部管理**: `_photo_items_by_key` (`dict[int, PhotoItem]`) で `id()` ベースのルックアップ。モデル上は `UserRole` にキーを格納
 - **データ収集**: `collect_photo_items()` で並び順の PhotoItem リストを返す（`ReportWizard._build_photos()` から使用）
+- **再利用入口**: `move_photo_item_left()` / `move_photo_item_right()` を公開し、Step 7 の限定移動から同じ単一移動ロジックを使う
 - **クリーンアップ**: `cancel_active_import()` でスレッド停止。`ReportWizard.closeEvent()` から呼び出される
+
+### PhotoDescriptionPage (Step 7)
+
+- **表示モード**: 1 / 2 / 4 枚表示。2 / 4 枚では current anchor から連続した写真を表示
+- **編集項目**: 写真 No、現場、施工日、施工箇所、施工内容、備考。写真 No は読み取り専用
+- **対象切替**: `前の写真` / `次の写真` ボタンと `PageUp` / `PageDown`
+- **限定移動**: `写真を一つ前に移動` / `写真を一つ後ろに移動` は、フォーカス中の `_PhotoDescriptionEditor` に紐づく PhotoItem に適用される
+- **フォーカス管理**: フォーカス中の編集枠は薄い青背景 + 枠線で強調表示し、クリック / Tab 移動で操作対象を更新する
+- **再同期**: 初期表示時および再入場時に `site` `work_date` `location` の未編集項目のみ最新既定値へ更新する
+- **データ反映**: 編集値は即時に PhotoItem へ書き戻され、`ReportWizard._build_photos()` の photos 配列へそのまま出力される
 
 #### Step 6 の追加テスト観点
 
@@ -162,6 +185,25 @@ class PhotoItem:
 │ サムネイルサイズ: 100% [====●========]   │
 │ 写真 6 枚 / 2 ページ（1ページあたり 3 枚） │
 └─────────────────────────────────────────┘
+
+### Step 7: 写真説明
+
+```
+
+┌──────────────────────────────────────────────────────┐
+│ 現在位置: 2 / 6 │
+│ [前の写真] [次の写真] [写真を一つ前に移動] [写真を一つ後ろに移動] │
+│ [1枚表示] [2枚表示] [4枚表示] │
+├──────────────────────────────────────────────────────┤
+│ ┌─ 写真 2 ────────────────────────┐ ┌─ 写真 3 ─────┐ │
+│ │ 背景薄青 = フォーカス中 │ │ 通常表示 │ │
+│ │ [サムネイル] │ │ [サムネイル] │ │
+│ │ 写真No / 現場 / 施工日 / ... │ │ 各説明欄 │ │
+│ └────────────────────────────────┘ └──────────────┘ │
+└──────────────────────────────────────────────────────┘
+
+```
+
 ```
 
 ## セキュリティ考慮
@@ -188,20 +230,21 @@ class PhotoItem:
     {
       "no": 1,
       "photo_path": "file:///C:/Users/.../wrm_photos_.../0001.jpg",
-      "site": "",
-      "work_date": "",
-      "location": "",
-      "work_content": "",
-      "remarks": ""
+      "site": "京都三条ホテル",
+      "work_date": "2025年 3月 27日(木)",
+      "location": "1階厨房",
+      "work_content": "グリストラップ清掃",
+      "remarks": "異常なし"
     }
   ]
 }
 ```
 
 - `photo_path`: 一時ディレクトリ内のファイルを `file://` URI で参照
-- メタデータ (`site`, `work_date` 等) は空文字列プレースホルダ（後続フェーズで入力 UI を追加予定）
+- `site` `work_date` `location` `work_content` `remarks`: Step 7 の PhotoItem 編集値をそのまま反映
+- 文字数に応じた行分割、縮小フォント、`layout_mode` の選択は `services/report_adapter.py` が担当する
 
 ## スコープ
 
-- **IN**: 画像読み込み、圧縮、4:3 クロップ、並び替え、追加、削除
-- **OUT**: 写真メタデータ入力（site, work_date, location, work_content, remarks）— 後続フェーズで実装
+- **IN**: 画像読み込み、圧縮、4:3 クロップ、並び替え、追加、削除、写真説明入力、既定値再同期、最終 photos 出力連携
+- **OUT**: テンプレート HTML/CSS の写真レイアウト変更

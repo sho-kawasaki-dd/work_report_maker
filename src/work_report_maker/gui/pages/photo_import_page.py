@@ -87,7 +87,13 @@ class PhotoItem:
             "work_date": defaults.work_date,
             "location": defaults.location,
         }.items():
-            if force or field_name not in self._user_edited_description_fields:
+            current_value = getattr(self, field_name)
+            previous_default = self._default_description_values.get(field_name, "")
+            should_update = force or (
+                field_name not in self._user_edited_description_fields
+                and (current_value == "" or current_value == previous_default)
+            )
+            if should_update:
                 setattr(self, field_name, value)
             self._default_description_values[field_name] = value
 
@@ -487,7 +493,7 @@ class PhotoImportPage(QWizardPage):
         """PhotoItem 群をまとめてリストへ追加し、UI 更新回数を抑える。"""
         defaults = self.current_photo_description_defaults()
         for item in items:
-            item.apply_initial_description_defaults(defaults)
+            item.sync_description_defaults(defaults)
         self._photo_items.extend(items)
         self._append_list_items(items)
         self._update_count_label()
