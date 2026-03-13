@@ -26,7 +26,7 @@ from PySide6.QtWidgets import QMessageBox, QWizard
 from work_report_maker.gui.pages.cover_form_page import CoverFormPage
 from work_report_maker.gui.pages.overview_form_page import OverviewFormPage
 from work_report_maker.gui.pages.photo_arrange_page import PhotoArrangePage
-from work_report_maker.gui.pages.photo_import_page import PhotoImportPage
+from work_report_maker.gui.pages.photo_import_page import PhotoDescriptionDefaults, PhotoImportPage
 from work_report_maker.gui.pages.project_name_page import ProjectNamePage
 from work_report_maker.gui.pages.work_content_page import WorkContentPage
 
@@ -63,6 +63,14 @@ class ReportWizard(QWizard):
         self.addPage(self._work_content_page)
         self.addPage(self._photo_import_page)
         self.addPage(self._photo_arrange_page)
+
+    def photo_description_defaults(self) -> PhotoDescriptionDefaults:
+        """写真説明欄へ注入する既定値を返す。"""
+        return PhotoDescriptionDefaults(
+            site=self._overview_page.default_photo_site(),
+            work_date=self._cover_page.format_start_date(),
+            location=self._overview_page.default_photo_location(),
+        )
 
     def closeEvent(self, event: QCloseEvent) -> None:
         arrange_stopped = self._photo_arrange_page.cancel_active_import()

@@ -244,6 +244,10 @@ class CoverFormPage(QWizardPage):
         """提出先フィールドの現在値を返す（「御中」なし）。"""
         return self._recipient_edit.text().strip()
 
+    def format_start_date(self) -> str:
+        """開始日だけを写真説明用の文字列として返す。"""
+        return _format_date_with_dow(self._start_date.date())
+
     # ── データ収集 ────────────────────────────────────────
 
     def format_work_date(self) -> str:

@@ -104,10 +104,18 @@ class OverviewFormPage(QWizardPage):
         ユーザーが Step 2 へ戻って値を変更した場合も追従する。
         """
         cover = self._wizard()._cover_page
-        self._lbl_target.setText(cover.building_name())
-        self._lbl_location.setText(cover.subtitle())
+        self._lbl_target.setText(self.default_photo_site())
+        self._lbl_location.setText(self.default_photo_location())
         self._lbl_content.setText(cover.title_text())
         self._lbl_date.setText(cover.format_work_date())
+
+    def default_photo_site(self) -> str:
+        """写真説明の「現場」に使う既定値を返す。"""
+        return self._wizard()._cover_page.building_name()
+
+    def default_photo_location(self) -> str:
+        """写真説明の「施工箇所」に使う既定値を返す。"""
+        return self._wizard()._cover_page.subtitle()
 
     # ── データ収集 ────────────────────────────────────────
 
@@ -144,8 +152,8 @@ class OverviewFormPage(QWizardPage):
             staff_extra.append(f"現場作業者　{workers}")
 
         return [
-            {"number": "1", "label": "施工対象・名称", "value": cover.building_name(), "extra_values": []},
-            {"number": "2", "label": "施工場所", "value": cover.subtitle(), "extra_values": []},
+            {"number": "1", "label": "施工対象・名称", "value": self.default_photo_site(), "extra_values": []},
+            {"number": "2", "label": "施工場所", "value": self.default_photo_location(), "extra_values": []},
             {"number": "3", "label": "施工内容", "value": cover.title_text(), "extra_values": []},
             {"number": "4", "label": "施工日時", "value": cover.format_work_date(), "extra_values": []},
             {"number": "5", "label": "施工担当", "value": staff_value, "extra_values": staff_extra},

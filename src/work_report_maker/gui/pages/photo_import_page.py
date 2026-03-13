@@ -9,7 +9,7 @@ PhotoItem データクラスとしてメモリ上に保持する。
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -43,6 +43,16 @@ if TYPE_CHECKING:
 # サムネイルの一辺サイズ (px)
 _THUMBNAIL_SIZE = 128
 _ITEM_BATCH_SIZE = 8
+_SYNCED_DESCRIPTION_FIELDS = ("site", "work_date", "location")
+
+
+@dataclass(frozen=True)
+class PhotoDescriptionDefaults:
+    """写真説明欄へ注入する既定値セット。"""
+
+    site: str = ""
+    work_date: str = ""
+    location: str = ""
 
 
 @dataclass
@@ -53,6 +63,44 @@ class PhotoItem:
     data: bytes  # 圧縮済みバイト列
     format: str  # "jpeg" or "png"
     thumbnail: QImage | None = None  # サムネイル用 (ワーカースレッドで生成可能)
+    site: str = ""
+    work_date: str = ""
+    location: str = ""
+    work_content: str = ""
+    remarks: str = ""
+    _default_description_values: dict[str, str] = field(default_factory=dict, repr=False)
+    _user_edited_description_fields: set[str] = field(default_factory=set, repr=False)
+
+    def apply_initial_description_defaults(self, defaults: PhotoDescriptionDefaults) -> None:
+        """取り込み直後の既定値を注入する。"""
+        self.sync_description_defaults(defaults, force=True)
+
+    def sync_description_defaults(
+        self,
+        defaults: PhotoDescriptionDefaults,
+        *,
+        force: bool = False,
+    ) -> None:
+        """未編集項目にだけ既定値を反映し、最新の既定値スナップショットを保持する。"""
+        for field_name, value in {
+            "site": defaults.site,
+            "work_date": defaults.work_date,
+            "location": defaults.location,
+        }.items():
+            if force or field_name not in self._user_edited_description_fields:
+                setattr(self, field_name, value)
+            self._default_description_values[field_name] = value
+
+    def set_description_field(self, field_name: str, value: str) -> None:
+        """説明項目を更新し、ユーザー編集済みとして扱う。"""
+        if field_name not in {"site", "work_date", "location", "work_content", "remarks"}:
+            raise ValueError(f"Unsupported description field: {field_name}")
+        setattr(self, field_name, value)
+        self._user_edited_description_fields.add(field_name)
+
+    def is_description_field_user_edited(self, field_name: str) -> bool:
+        """指定した説明項目がユーザー編集済みかどうかを返す。"""
+        return field_name in self._user_edited_description_fields
 
 
 def _make_thumbnail(data: bytes, size: int = _THUMBNAIL_SIZE) -> QImage:
@@ -283,6 +331,22 @@ class PhotoImportPage(QWizardPage):
     def png_quality_max(self) -> int:
         return self._png_spin.value()
 
+    def current_photo_description_defaults(self) -> PhotoDescriptionDefaults:
+        """現在のウィザード状態から写真説明の既定値を取得する。"""
+        wizard = self.wizard()
+        defaults_getter = getattr(wizard, "photo_description_defaults", None)
+        if callable(defaults_getter):
+            defaults = defaults_getter()
+            if isinstance(defaults, PhotoDescriptionDefaults):
+                return defaults
+        return PhotoDescriptionDefaults()
+
+    def sync_photo_item_defaults(self) -> None:
+        """保持中の PhotoItem に最新の既定値を同期する。"""
+        defaults = self.current_photo_description_defaults()
+        for item in self._photo_items:
+            item.sync_description_defaults(defaults)
+
     # ── バリデーション ────────────────────────────────────
 
     def isComplete(self) -> bool:
@@ -421,6 +485,9 @@ class PhotoImportPage(QWizardPage):
 
     def _add_photo_items(self, items: list[PhotoItem]) -> None:
         """PhotoItem 群をまとめてリストへ追加し、UI 更新回数を抑える。"""
+        defaults = self.current_photo_description_defaults()
+        for item in items:
+            item.apply_initial_description_defaults(defaults)
         self._photo_items.extend(items)
         self._append_list_items(items)
         self._update_count_label()

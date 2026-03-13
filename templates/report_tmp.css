@@ -255,13 +255,13 @@ body {
 }
 
 .photo-page {
-  --photo-width: 105mm;
+  --photo-width: 102mm;
   --photo-panel-offset: 0mm;
   --photo-panel-width: 75mm;
   --photo-header-height: 6mm;
-  --photo-body-height: 75mm;
-  --photo-entry-height: 81mm;
-  --photo-gap: 9mm;
+  --photo-body-height: 77mm;
+  --photo-entry-height: 83mm;
+  --photo-gap: 6mm;
   height: 267mm;
   min-height: 267mm;
   padding: 3mm 0;
@@ -275,7 +275,9 @@ body {
   break-inside: avoid;
   page-break-inside: avoid;
   height: var(--photo-entry-height);
-  width: calc(var(--photo-width) + var(--photo-panel-offset) + var(--photo-panel-width));
+  width: calc(
+    var(--photo-width) + var(--photo-panel-offset) + var(--photo-panel-width)
+  );
   display: flex;
   flex-direction: column;
 }
@@ -405,7 +407,7 @@ body {
 }
 
 .photo-writing-row-remarks {
-  height: 18mm;
+  height: 22mm;
 }
 
 .stacked-cell {
@@ -455,5 +457,5 @@ body {
 }
 
 .writing-cell-remarks .writing-line {
-  height: 4.8mm;
+  height: 5.2mm;
 }

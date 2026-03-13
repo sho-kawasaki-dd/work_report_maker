@@ -11,3 +11,6 @@ wheels/
 
 # weasyprint dependencies folder
 dependencies/
+
+# pdf output
+*.pdf
