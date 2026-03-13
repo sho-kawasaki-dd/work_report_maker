@@ -10,6 +10,10 @@ DEFAULT_REPORT_JSON = PROJECT_ROOT / "data" / "raw_report.json"
 LEGACY_REPORT_JSON = PROJECT_ROOT / "data" / "report.json"
 OUTPUT_PDF = PROJECT_ROOT / "full_report.pdf"
 
+PHOTO_WIDTH_MM = 100.0
+PHOTO_HEIGHT_MM = 75.0
+SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+
 _DLL_DIRECTORIES: list[object] = []
 _runtime_configured = False
 
