@@ -11,15 +11,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QSize, Qt, QThread, Signal
+from PySide6.QtCore import QSize, Qt, QThread
 from PySide6.QtGui import (
-    QDrag,
-    QDragEnterEvent,
-    QDragMoveEvent,
-    QDropEvent,
     QIcon,
     QKeyEvent,
-    QPixmap,
     QStandardItem,
     QStandardItemModel,
 )
@@ -33,25 +28,28 @@ from PySide6.QtWidgets import (
     QProgressDialog,
     QPushButton,
     QSlider,
-    QStyleOptionViewItem,
-    QStyledItemDelegate,
     QToolButton,
     QVBoxLayout,
     QWizardPage,
 )
-
-from PySide6.QtCore import QMimeData
 
 from work_report_maker.gui.pages.photo_import_page import (
     PhotoItem,
     _ImportWorker,
     _format_failure_message,
 )
+from work_report_maker.gui.pages.photo_arrange_icons import (
+    PhotoArrangeIconController,
+    snap_zoom_percent,
+)
+from work_report_maker.gui.pages.photo_arrange_logic import build_row_move_plan
+from work_report_maker.gui.widgets.photo_arrange_view import (
+    PageBorderDelegate as _PageBorderDelegate,
+    PhotoArrangeListView as _PhotoArrangeListView,
+)
 from work_report_maker.services.image_processor import collect_image_paths
 
 if TYPE_CHECKING:
-    from PySide6.QtGui import QPainter
-
     from work_report_maker.gui.main_window import ReportWizard
 
 # 1ページあたりの写真枚数
@@ -75,166 +73,6 @@ _PHOTO_KEY_ROLE = Qt.ItemDataRole.UserRole
 # QListView 上の各アイテムは QStandardItem だが、実データ本体は PhotoImportPage 側の
 # PhotoItem にある。ここでは UserRole に「PhotoItem を一意に引くためのキー」だけを
 # 持たせて、表示の並び順と実データを疎結合に管理する。
-
-
-# ── ページ区切りデリゲート ────────────────────────────────
-
-
-class _PageBorderDelegate(QStyledItemDelegate):
-    """3枚ごとにページ境界線を右端に描画するデリゲート。"""
-
-    def paint(
-        self,
-        painter: QPainter,
-        option: QStyleOptionViewItem,
-        index: QModelIndex | QPersistentModelIndex,
-    ) -> None:
-        if not index.isValid():
-            return
-
-        model = index.model()
-        if model is None:
-            return
-
-        # 標準の描画処理で、アイコン・選択状態・テキストをまず描く。
-        super().paint(painter, option, index)
-        row = index.row()
-        total = model.rowCount()
-        if row < 0 or row >= total:
-            return
-
-        # 3枚ごとの最後のアイテム（0-indexed で 2, 5, 8, ...）の右端に線を引く
-        # ただし最終アイテムには描画しない
-        if (row + 1) % _PHOTOS_PER_PAGE == 0 and row < total - 1:
-            painter.save()
-            pen = painter.pen()
-            pen.setColor(Qt.GlobalColor.darkGray)
-            pen.setWidth(2)
-            pen.setStyle(Qt.PenStyle.DashLine)
-            painter.setPen(pen)
-            right = option.rect.right()
-            painter.drawLine(right, option.rect.top() + 4, right, option.rect.bottom() - 4)
-            painter.restore()
-
-
-class _PhotoArrangeListView(QListView):
-    """Arrange ページ専用の DnD 制御付き QListView。"""
-
-    # 内部 DnD 完了後に、ドロップ先行番号だけを親ページへ通知する。
-    internal_drop_requested = Signal(int)
-
-    # 実際の削除や移動ロジックは親ページ側に集約し、View はキー入力の仲介だけを担う。
-    delete_requested = Signal()
-    move_single_left_requested = Signal()
-    move_single_right_requested = Signal()
-
-    def __init__(self, parent=None) -> None:
-        super().__init__(parent)
-
-        # Arrange ページ内では「一覧の中だけで写真を並び替える」ことが主目的なので、
-        # 受け入れ・ドラッグ開始・ドロップ位置表示をすべて有効にしておく。
-        self.setAcceptDrops(True)
-        self.setDragEnabled(True)
-        self.setDropIndicatorShown(True)
-        self.setDefaultDropAction(Qt.DropAction.MoveAction)
-
-    def startDrag(self, supportedActions: Qt.DropAction) -> None:
-        indexes = self.selectedIndexes()
-        if not indexes:
-            return
-
-        # Qt 標準の内部移動に完全に任せるのではなく、独自 MIME タイプを使って
-        # 「この View 内の写真移動」であることを明示的に識別する。
-        drag = QDrag(self)
-        mime_data = QMimeData()
-        mime_data.setData(
-            "application/x-work-report-maker-photo-arrange",
-            b"move",
-        )
-        drag.setMimeData(mime_data)
-
-        current = self.currentIndex()
-        if current.isValid():
-            # ドラッグ中の視覚フィードバックとして、現在アイテムの見た目をそのまま掴ませる。
-            pixmap = self.viewport().grab(self.visualRect(current))
-            if not pixmap.isNull():
-                drag.setPixmap(pixmap)
-
-        drag.exec(Qt.DropAction.MoveAction)
-
-    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
-        if self._is_internal_drag(event):
-            event.setDropAction(Qt.DropAction.MoveAction)
-            event.accept()
-            return
-        super().dragEnterEvent(event)
-
-    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
-        if self._is_internal_drag(event):
-            event.setDropAction(Qt.DropAction.MoveAction)
-            event.accept()
-            return
-        super().dragMoveEvent(event)
-
-    def dropEvent(self, event: QDropEvent) -> None:
-        if self._is_internal_drag(event):
-            target_row = self._drop_row_for_event(event)
-            self.internal_drop_requested.emit(target_row)
-            event.setDropAction(Qt.DropAction.MoveAction)
-            event.accept()
-            return
-        super().dropEvent(event)
-
-    def keyPressEvent(self, event: QKeyEvent) -> None:
-        # キーイベントは View が直接受けやすいため、親ページにシグナルで委譲する。
-        # これにより、フォーカスが QListView 上にある通常利用時でもショートカットが効く。
-        if event.key() == Qt.Key.Key_Delete:
-            self.delete_requested.emit()
-            event.accept()
-            return
-
-        if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            if event.key() == Qt.Key.Key_Left:
-                self.move_single_left_requested.emit()
-                event.accept()
-                return
-            if event.key() == Qt.Key.Key_Right:
-                self.move_single_right_requested.emit()
-                event.accept()
-                return
-
-        super().keyPressEvent(event)
-
-    def _is_internal_drag(self, event: QDragEnterEvent | QDragMoveEvent | QDropEvent) -> bool:
-        # 自分自身を source とし、かつ独自 MIME タイプを持つイベントだけを
-        # Arrange ページ独自の並び替えとして扱う。
-        mime_data = event.mimeData()
-        return (
-            event.source() is self
-            and mime_data is not None
-            and mime_data.hasFormat("application/x-work-report-maker-photo-arrange")
-        )
-
-    def _drop_row_for_event(self, event: QDropEvent) -> int:
-        # ドロップ位置が既存アイテムの前か後かを、アイテム中心との相対位置で判定する。
-        # IconMode では単純な縦リストとは限らないため、x/y のどちらかが中心を超えたら
-        # 「そのアイテムの後ろ」とみなす簡易ルールにしている。
-        pos = event.position().toPoint()
-        index = self.indexAt(pos)
-        model = self.model()
-        if model is None:
-            return 0
-        if not index.isValid():
-            return model.rowCount()
-
-        row = index.row()
-        rect = self.visualRect(index)
-        if pos.x() >= rect.center().x() or pos.y() >= rect.center().y():
-            return row + 1
-        return row
-
-
-# ── メインページ ──────────────────────────────────────────
 
 
 class PhotoArrangePage(QWizardPage):
@@ -273,8 +111,7 @@ class PhotoArrangePage(QWizardPage):
 
         # ズーム倍率ごとの巨大なキャッシュは持たず、「現在表示中の倍率 1 つ分だけ」
         # QIcon を保持する軽量キャッシュ。倍率が変わったら丸ごと捨てる。
-        self._icon_cache_size: int | None = None
-        self._icon_cache: dict[int, QIcon] = {}
+        self._icon_controller = PhotoArrangeIconController(self._photo_key)
 
         # ── サムネイルグリッド ──
         self._model = QStandardItemModel(self)
@@ -298,7 +135,7 @@ class PhotoArrangePage(QWizardPage):
         self._view.setResizeMode(QListView.ResizeMode.Adjust)
         self._view.setWrapping(True)
         self._view.setSpacing(4)
-        self._view.setItemDelegate(_PageBorderDelegate(self._view))
+        self._view.setItemDelegate(_PageBorderDelegate(_PHOTOS_PER_PAGE, self._view))
 
         # View が拾った操作イベントを、実処理を持つページメソッドへ接続する。
         self._view.internal_drop_requested.connect(self._move_selection_to)
@@ -360,6 +197,14 @@ class PhotoArrangePage(QWizardPage):
         main_layout.addLayout(zoom_row)
         main_layout.addWidget(self._info_label)
         self.setLayout(main_layout)
+
+    @property
+    def _icon_cache_size(self) -> int | None:
+        return self._icon_controller.cache_size
+
+    @property
+    def _icon_cache(self) -> dict[int, QIcon]:
+        return self._icon_controller.cache
 
     # ── ウィザード参照 ────────────────────────────────────
 
@@ -471,50 +316,18 @@ class PhotoArrangePage(QWizardPage):
 
     def _clear_icon_cache(self) -> None:
         # キャッシュ対象は 1 倍率分だけなので、倍率変更やデータ破棄時は丸ごとクリアで十分。
-        self._icon_cache_size = None
-        self._icon_cache.clear()
+        self._icon_controller.clear()
 
     def _make_icon_for_photo(self, photo: PhotoItem, size: int) -> QIcon:
-        # 別倍率へ切り替わったら、以前の倍率のキャッシュは使わない。
-        key = self._photo_key(photo)
-        if self._icon_cache_size != size:
-            self._icon_cache_size = size
-            self._icon_cache.clear()
-
-        # 同じ倍率内では同一 PhotoItem の再スケーリングを避ける。
-        cached_icon = self._icon_cache.get(key)
-        if cached_icon is not None:
-            return cached_icon
-
-        # まず圧縮済み bytes から表示用 pixmap を作る。これにより、100% 超でも
-        # 128px の固定サムネイルに縛られず、必要サイズで再描画できる。
-        pixmap = QPixmap()
-        pixmap.loadFromData(photo.data)
-        if pixmap.isNull():
-            # まれに bytes からの復元に失敗した場合だけ、既存 thumbnail をフォールバック利用する。
-            if photo.thumbnail is None or photo.thumbnail.isNull():
-                return QIcon()
-            pixmap = QPixmap.fromImage(photo.thumbnail)
-
-        # 画像比率は崩さず、要求された一辺サイズに収まるよう滑らかに縮放する。
-        scaled = pixmap.scaled(
-            size,
-            size,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        icon = QIcon(scaled)
-        self._icon_cache[key] = icon
-        return icon
+        return self._icon_controller.icon_for_photo(photo, size)
 
     def _refresh_item_icons(self) -> None:
         # 現在の iconSize に合わせて、全アイテムの見た目をまとめて同期する。
-        icon_size = self._view.iconSize().width()
-        for row in range(self._model.rowCount()):
-            item = self._model.item(row)
-            photo = self._photo_for_row(row)
-            if item is not None and photo is not None:
-                item.setIcon(self._make_icon_for_photo(photo, icon_size))
+        self._icon_controller.refresh_model_icons(
+            self._model,
+            self._view.iconSize().width(),
+            self._photo_for_row,
+        )
 
     # ── ズーム ────────────────────────────────────────────
 
@@ -524,9 +337,7 @@ class PhotoArrangePage(QWizardPage):
 
     def _snap_zoom_percent(self, percent: int) -> int:
         # スライダー値を 25% 刻みに丸める。50%〜200% の範囲外には出さない。
-        offset = round((percent - _MIN_ZOOM_PERCENT) / _ZOOM_STEP_PERCENT)
-        snapped = _MIN_ZOOM_PERCENT + (offset * _ZOOM_STEP_PERCENT)
-        return max(_MIN_ZOOM_PERCENT, min(snapped, _MAX_ZOOM_PERCENT))
+        return snap_zoom_percent(percent, _MIN_ZOOM_PERCENT, _MAX_ZOOM_PERCENT, _ZOOM_STEP_PERCENT)
 
     def _thumb_size_for_percent(self, percent: int) -> int:
         # 100% を 128px と解釈した実表示サイズへ変換する。
@@ -542,13 +353,15 @@ class PhotoArrangePage(QWizardPage):
             self._zoom_slider.blockSignals(False)
         value = snapped_value
 
-        thumb_size = self._thumb_size_for_percent(value)
-        self._update_zoom_label(value)
-
-        # 枠サイズと実アイコン表示の両方を更新しないと、「枠だけ大きい」状態になる。
-        self._view.setIconSize(QSize(thumb_size, thumb_size))
-        self._view.setGridSize(QSize(thumb_size + _GRID_PADDING, thumb_size + _GRID_PADDING))
-        self._refresh_item_icons()
+        self._icon_controller.apply_zoom_to_view(
+            view=self._view,
+            label=self._zoom_label,
+            percent=value,
+            default_thumb_size=_DEFAULT_THUMB_SIZE,
+            grid_padding=_GRID_PADDING,
+            model=self._model,
+            photo_for_row=self._photo_for_row,
+        )
 
     # ── 並び替え (矢印ボタン) ─────────────────────────────
 
@@ -585,38 +398,26 @@ class PhotoArrangePage(QWizardPage):
 
     def _move_rows_to(self, rows: list[int], insert_row: int) -> list[int]:
         # 複数行移動の中核ロジック。D&D / ボタン / キーバインドが最終的にここへ集約される。
-        if not rows:
+        plan = build_row_move_plan(rows, insert_row, self._model.rowCount())
+        if plan.is_noop:
+            return plan.destination_rows
+
+        if not plan.source_rows:
             return []
-
-        row_count = self._model.rowCount()
-        if row_count == 0:
-            return []
-
-        # 重複や順不同があっても安定動作するよう、先に昇順一意化しておく。
-        rows = sorted(set(rows))
-        insert_row = max(0, min(insert_row, row_count))
-
-        # 選択ブロックの内部へ落とすだけなら見た目が変わらないので no-op 扱いにする。
-        if rows[0] <= insert_row <= rows[-1] + 1:
-            return rows
 
         # takeRow() は行を抜くたび後続行が詰まるので、offset で補正しながら取り出す。
         moved_rows: list[list[QStandardItem]] = []
-        for offset, row in enumerate(rows):
+        for offset, row in enumerate(plan.source_rows):
             taken = self._model.takeRow(row - offset)
             if taken:
                 moved_rows.append(taken)
 
         if not moved_rows:
-            return rows
-
-        # 取り出し前の insert_row を、その後の行詰めを考慮した位置へ補正する。
-        adjusted_insert = insert_row - sum(1 for row in rows if row < insert_row)
-        adjusted_insert = max(0, min(adjusted_insert, self._model.rowCount()))
+            return plan.source_rows
 
         new_rows: list[int] = []
         for index, taken in enumerate(moved_rows):
-            destination = adjusted_insert + index
+            destination = plan.adjusted_insert_row + index
             self._model.insertRow(destination, taken)
             new_rows.append(destination)
 
@@ -888,7 +689,7 @@ class PhotoArrangePage(QWizardPage):
         for row in reversed(rows):
             self._model.removeRow(row)
         for photo in items_to_remove:
-            self._icon_cache.pop(self._photo_key(photo), None)
+            self._icon_controller.cache.pop(self._photo_key(photo), None)
         self._refresh_item_labels()
         self._update_info_label()
 
