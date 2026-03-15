@@ -137,3 +137,17 @@ class OverviewFormPage(QWizardPage):
             manager=self._manager_edit.text().strip(),
             workers=self._workers_edit.text().strip(),
         )
+
+    def form_state(self) -> dict:
+        return {
+            "manager": self._manager_edit.text(),
+            "workers": self._workers_edit.text(),
+        }
+
+    def apply_form_state(self, state: dict) -> None:
+        self._manager_edit.setText(str(state.get("manager", "")))
+        self._workers_edit.setText(str(state.get("workers", "")))
+        self.initializePage()
+
+    def clear_form_state(self) -> None:
+        self.apply_form_state({})

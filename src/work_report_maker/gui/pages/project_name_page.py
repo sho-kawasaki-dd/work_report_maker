@@ -7,15 +7,20 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
-from PySide6.QtWidgets import QCheckBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWizardPage
+from PySide6.QtWidgets import QCheckBox, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWizardPage
 
+from work_report_maker.gui.project_store import list_project_names
 from work_report_maker.gui.preset_manager import (
     load_close_after_pdf_generation,
     load_default_output_dir,
     save_close_after_pdf_generation,
     save_default_output_dir,
 )
+
+if TYPE_CHECKING:
+    from work_report_maker.gui.main_window import ReportWizard
 
 
 class ProjectNamePage(QWizardPage):
@@ -40,6 +45,15 @@ class ProjectNamePage(QWizardPage):
         # プロジェクト名入力フィールド
         self._name_edit = QLineEdit()
         self._name_edit.setPlaceholderText("例: ロワジールホテル グリストラップ清掃 2025-03")
+        self._load_button = QPushButton("プロジェクト読込")
+        self._load_button.clicked.connect(self._load_project)
+        self._delete_button = QPushButton("プロジェクト削除")
+        self._delete_button.clicked.connect(self._delete_project)
+
+        project_actions = QHBoxLayout()
+        project_actions.addWidget(self._load_button)
+        project_actions.addWidget(self._delete_button)
+        project_actions.addStretch()
 
         # 保存先は Step 1 で見せておき、以後のプロジェクトでも再利用できるユーザー設定として扱う。
         self._output_dir_edit = QLineEdit()
@@ -65,6 +79,7 @@ class ProjectNamePage(QWizardPage):
         layout = QVBoxLayout()
         layout.addWidget(QLabel("プロジェクト名"))
         layout.addWidget(self._name_edit)
+        layout.addLayout(project_actions)
         layout.addWidget(QLabel("PDF 保存先フォルダ"))
         layout.addLayout(output_dir_row)
         layout.addWidget(output_hint)
@@ -87,6 +102,9 @@ class ProjectNamePage(QWizardPage):
         """成功後にアプリを閉じる設定値を返す。"""
 
         return self._close_after_generation_check.isChecked()
+
+    def set_project_name(self, project_name: str) -> None:
+        self._name_edit.setText(project_name)
 
     def _choose_output_directory(self) -> None:
         """保存先フォルダ選択ダイアログを開き、選択結果を永続化する。"""
@@ -113,3 +131,49 @@ class ProjectNamePage(QWizardPage):
         """
 
         save_close_after_pdf_generation(checked)
+
+    def _wizard(self) -> ReportWizard:
+        from work_report_maker.gui.main_window import ReportWizard
+
+        return cast(ReportWizard, self.wizard())
+
+    def _load_project(self) -> None:
+        project_name = self._select_project_name(
+            title="プロジェクト読込",
+            label="読込するプロジェクトを選択してください",
+        )
+        if project_name is None:
+            return
+        if not self._wizard().load_project_named(project_name):
+            return
+        self._wizard().next()
+
+    def _delete_project(self) -> None:
+        project_name = self._select_project_name(
+            title="プロジェクト削除",
+            label="削除するプロジェクトを選択してください",
+        )
+        if project_name is None:
+            return
+
+        answer = QMessageBox.question(
+            self,
+            "削除確認",
+            f"プロジェクト「{project_name}」を削除しますか？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        self._wizard().delete_project_named(project_name)
+
+    def _select_project_name(self, *, title: str, label: str) -> str | None:
+        names = list_project_names()
+        if not names:
+            QMessageBox.information(self, title, "保存済みプロジェクトがありません。")
+            return None
+        selected_name, accepted = QInputDialog.getItem(self, title, label, names, 0, False)
+        if not accepted or not selected_name:
+            return None
+        return selected_name

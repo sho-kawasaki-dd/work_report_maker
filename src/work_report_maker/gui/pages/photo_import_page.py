@@ -169,6 +169,7 @@ class PhotoImportPage(QWizardPage):
         self._png_slider = self._compression_controls.png_slider
         self._png_spin = self._compression_controls.png_spin
         self._png_label = self._compression_controls.png_label
+        self._default_import_settings = self.import_settings_state()
 
         # ── 読み込み済みリスト ──
         self._list_widget = QListWidget()
@@ -264,6 +265,26 @@ class PhotoImportPage(QWizardPage):
             if isinstance(defaults, PhotoDescriptionDefaults):
                 return defaults
         return PhotoDescriptionDefaults()
+
+    def import_settings_state(self) -> dict:
+        return {
+            "dpi": self.dpi(),
+            "jpeg_quality": self.jpeg_quality(),
+            "png_quality_max": self.png_quality_max(),
+        }
+
+    def apply_import_settings_state(self, state: dict) -> None:
+        self._dpi_spin.setValue(int(state.get("dpi", self._default_import_settings["dpi"])))
+        self._jpeg_spin.setValue(int(state.get("jpeg_quality", self._default_import_settings["jpeg_quality"])))
+        self._png_spin.setValue(int(state.get("png_quality_max", self._default_import_settings["png_quality_max"])))
+
+    def replace_photo_items(self, items: list[PhotoItem]) -> None:
+        self._list_controller.clear_all()
+        self._add_photo_items(items)
+
+    def clear_project_state(self) -> None:
+        self.apply_import_settings_state(self._default_import_settings)
+        self._list_controller.clear_all()
 
     def sync_photo_item_defaults(self) -> None:
         """保持中の PhotoItem に最新の既定値を同期する。"""

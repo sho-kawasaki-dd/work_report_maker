@@ -52,7 +52,13 @@ class _SubGroupWidget(QWidget):
     UI 構成: [marker QLineEdit] [title QLineEdit] [×削除] + lines QTextEdit
     """
 
-    def __init__(self, marker: str = "", title: str = "", parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        marker: str = "",
+        title: str = "",
+        lines: list[str] | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
 
         self.marker_edit = QLineEdit(marker)
@@ -74,6 +80,8 @@ class _SubGroupWidget(QWidget):
         header.addWidget(self._btn_delete)
 
         self.lines_edit = _make_text_edit(lines=2, placeholder="サブグループの作業内容（改行区切り）")
+        if lines:
+            self.lines_edit.setPlainText("\n".join(lines))
 
         lines_indent = QHBoxLayout()
         lines_indent.setContentsMargins(32, 0, 0, 0)
@@ -115,6 +123,8 @@ class _WorkGroupWidget(QWidget):
         group_index: int,
         marker: str = "",
         title: str = "",
+        lines: list[str] | None = None,
+        sub_groups: list[dict] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -137,12 +147,14 @@ class _WorkGroupWidget(QWidget):
         header.addWidget(self._btn_delete)
 
         self.lines_edit = _make_text_edit(lines=3, placeholder="作業内容（改行区切り）")
+        if lines:
+            self.lines_edit.setPlainText("\n".join(lines))
 
         self._sub_layout = QVBoxLayout()
         self._sub_layout.setContentsMargins(0, 0, 0, 0)
 
         btn_add_sub = QPushButton("+ サブグループ追加")
-        btn_add_sub.clicked.connect(self._add_sub_group)
+        btn_add_sub.clicked.connect(lambda: self._add_sub_group())
 
         sub_area = QVBoxLayout()
         sub_area.setContentsMargins(0, 0, 0, 0)
@@ -163,13 +175,26 @@ class _WorkGroupWidget(QWidget):
 
         self._btn_delete.clicked.connect(self._request_delete)
 
+        for sub_group in sub_groups or []:
+            self._add_sub_group(
+                marker=str(sub_group.get("marker", "")),
+                title=str(sub_group.get("title", "")),
+                lines=list(sub_group.get("lines", [])),
+            )
+
     def _next_sub_marker(self) -> str:
         count = self._sub_layout.count()
         letter = chr(ord("a") + count)
         return f"{self._group_index}-{letter})"
 
-    def _add_sub_group(self) -> None:
-        sub = _SubGroupWidget(marker=self._next_sub_marker())
+    def _add_sub_group(
+        self,
+        *,
+        marker: str | None = None,
+        title: str = "",
+        lines: list[str] | None = None,
+    ) -> None:
+        sub = _SubGroupWidget(marker=marker or self._next_sub_marker(), title=title, lines=lines)
         self._sub_layout.addWidget(sub)
 
     def _request_delete(self) -> None:
@@ -196,6 +221,23 @@ class _WorkGroupWidget(QWidget):
             if isinstance(widget, _SubGroupWidget):
                 entries.append(widget.collect())
         return entries
+
+    def snapshot(self) -> dict:
+        raw_lines = self.lines_edit.toPlainText().split("\n")
+        sub_groups: list[dict] = []
+        for i in range(self._sub_layout.count()):
+            item = self._sub_layout.itemAt(i)
+            if item is None:
+                continue
+            widget = item.widget()
+            if isinstance(widget, _SubGroupWidget):
+                sub_groups.append(widget.collect())
+        return {
+            "marker": self.marker_edit.text().strip(),
+            "title": self.title_edit.text().strip(),
+            "lines": [line for line in raw_lines if line.strip()],
+            "sub_groups": sub_groups,
+        }
 
 
 # ── メインページ ──────────────────────────────────────────
@@ -235,7 +277,7 @@ class WorkContentPage(QWizardPage):
         self._group_counter = 0
 
         btn_add_group = QPushButton("+ グループ追加")
-        btn_add_group.clicked.connect(self._add_work_group)
+        btn_add_group.clicked.connect(lambda: self._add_work_group())
 
         work_inner = QVBoxLayout()
         work_inner.addLayout(first_group_layout)
@@ -274,11 +316,24 @@ class WorkContentPage(QWizardPage):
 
     # ── グループ操作 ──────────────────────────────────────
 
-    def _add_work_group(self) -> None:
+    def _add_work_group(
+        self,
+        *,
+        marker: str | None = None,
+        title: str = "",
+        lines: list[str] | None = None,
+        sub_groups: list[dict] | None = None,
+    ) -> _WorkGroupWidget:
         self._group_counter += 1
-        marker = f"{self._group_counter})"
-        group = _WorkGroupWidget(group_index=self._group_counter, marker=marker)
+        group = _WorkGroupWidget(
+            group_index=self._group_counter,
+            marker=marker or f"{self._group_counter})",
+            title=title,
+            lines=lines,
+            sub_groups=sub_groups,
+        )
         self._groups_layout.addWidget(group)
+        return group
 
     # ── データ収集 ────────────────────────────────────────
 
@@ -305,3 +360,45 @@ class WorkContentPage(QWizardPage):
                 groups.extend(widget.collect())
 
         return groups
+
+    def form_state(self) -> dict:
+        groups: list[dict] = []
+        for i in range(self._groups_layout.count()):
+            item = self._groups_layout.itemAt(i)
+            if item is None:
+                continue
+            widget = item.widget()
+            if isinstance(widget, _WorkGroupWidget):
+                groups.append(widget.snapshot())
+        return {
+            "first_group_lines": [line for line in self._first_group_lines.toPlainText().split("\n") if line.strip()],
+            "groups": groups,
+        }
+
+    def apply_form_state(self, state: dict) -> None:
+        self._first_group_lines.setPlainText("\n".join(state.get("first_group_lines", [])))
+        self._clear_dynamic_groups()
+        for group_state in state.get("groups", []):
+            if not isinstance(group_state, dict):
+                continue
+            self._add_work_group(
+                marker=str(group_state.get("marker", "")),
+                title=str(group_state.get("title", "")),
+                lines=list(group_state.get("lines", [])),
+                sub_groups=list(group_state.get("sub_groups", [])),
+            )
+        self.initializePage()
+
+    def clear_form_state(self) -> None:
+        self.apply_form_state({})
+
+    def _clear_dynamic_groups(self) -> None:
+        while self._groups_layout.count():
+            item = self._groups_layout.takeAt(0)
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
+        self._group_counter = 0

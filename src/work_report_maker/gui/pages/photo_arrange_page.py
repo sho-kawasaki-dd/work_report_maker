@@ -747,6 +747,15 @@ class PhotoArrangePage(QWizardPage):
                 items.append(photo)
         return items
 
+    def reset_items_from_context(self) -> None:
+        """共有 context の写真集合からモデルを再構築する。"""
+
+        self._initialized = False
+        self._model.clear()
+        self._photo_items_by_key.clear()
+        self._clear_icon_cache()
+        self.initializePage()
+
     # ── 情報表示 ──────────────────────────────────────────
 
     def _update_info_label(self) -> None:

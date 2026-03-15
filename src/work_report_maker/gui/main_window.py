@@ -28,6 +28,14 @@ from work_report_maker.gui.pages.photo_arrange_page import PhotoArrangePage
 from work_report_maker.gui.pages.photo_description_page import PhotoDescriptionPage
 from work_report_maker.gui.pages.photo_import_page import PhotoDescriptionDefaults, PhotoImportPage, PhotoItem
 from work_report_maker.gui.pages.project_name_page import ProjectNamePage
+from work_report_maker.gui.project_store import (
+    ProjectNotFoundError,
+    ProjectStoreError,
+    delete_project,
+    load_project,
+    project_exists,
+    save_project,
+)
 from work_report_maker.gui.report_generation_operation import PDFGenerationController
 from work_report_maker.gui.pages.work_content_page import WorkContentPage
 from work_report_maker.gui.preset_manager import load_default_output_dir
@@ -78,6 +86,18 @@ class ReportWizard(QWizard):
         # 今回求められている「Next の左側に並ぶ Back」を安定して出すには、
         # 下部のボタン列を使う ClassicStyle へ固定しておく必要がある。
         self.setWizardStyle(QWizard.WizardStyle.ClassicStyle)
+        self.setOption(QWizard.WizardOption.HaveCustomButton1, True)
+        self.setButtonText(QWizard.WizardButton.CustomButton1, "プロジェクトを保存")
+        self.setButtonLayout(
+            [
+                QWizard.WizardButton.CustomButton1,
+                QWizard.WizardButton.Stretch,
+                QWizard.WizardButton.BackButton,
+                QWizard.WizardButton.NextButton,
+                QWizard.WizardButton.FinishButton,
+                QWizard.WizardButton.CancelButton,
+            ]
+        )
         # reject() → close() → closeEvent() → super().closeEvent() → reject() のように
         # Qt 内部で再入が起きると確認ダイアログが二重表示される。_close_guard で
         # closeEvent 処理中の再入を検出し、確認ダイアログは必ず 1 回だけにする。
@@ -109,6 +129,9 @@ class ReportWizard(QWizard):
         # ボタン文言と表示状態は wizard style の再構築時に上書きされることがあるため、
         # currentIdChanged と初期反映の両方で同期しておく。
         self.setButtonText(QWizard.WizardButton.BackButton, "Back")
+        custom_save_button = self.button(QWizard.WizardButton.CustomButton1)
+        if custom_save_button is not None:
+            custom_save_button.clicked.connect(self.save_current_project)
         self.currentIdChanged.connect(self._sync_navigation_buttons)
         self._sync_navigation_buttons(self.currentId())
 
@@ -169,6 +192,12 @@ class ReportWizard(QWizard):
     def default_photo_location(self) -> str:
         return self.cover_display_info().photo_location
 
+    def project_name_text(self) -> str:
+        project_name = self.field("project_name")
+        if isinstance(project_name, str):
+            return project_name.strip()
+        return ""
+
     def collect_work_groups(self) -> list[dict]:
         return self._work_content_page.collect_work_groups()
 
@@ -211,6 +240,60 @@ class ReportWizard(QWizard):
         import_stopped = self._photo_import_page.cancel_active_import()
         return arrange_stopped and import_stopped
 
+    def save_current_project(self) -> bool:
+        """現在の入力状態を任意保存する。"""
+
+        project_name = self.project_name_text()
+        if not project_name:
+            QMessageBox.warning(self, "保存エラー", "プロジェクト名を入力してください。")
+            return False
+
+        if project_exists(project_name):
+            answer = QMessageBox.question(
+                self,
+                "上書き確認",
+                f"プロジェクト「{project_name}」は既に存在します。上書きしますか？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return False
+
+        try:
+            project_dir = save_project(**self._collect_project_save_kwargs())
+        except ProjectStoreError as exc:
+            QMessageBox.critical(self, "保存エラー", str(exc))
+            return False
+
+        QMessageBox.information(self, "保存完了", f"プロジェクトを保存しました。\n{project_dir}")
+        return True
+
+    def load_project_named(self, project_name: str) -> bool:
+        """指定名のプロジェクトを読み込み、wizard 状態へ反映する。"""
+
+        try:
+            state = load_project(project_name)
+        except (ProjectNotFoundError, ProjectStoreError) as exc:
+            QMessageBox.critical(self, "読込エラー", str(exc))
+            return False
+
+        self._apply_project_state(state)
+        return True
+
+    def delete_project_named(self, project_name: str) -> bool:
+        """指定名の保存済みプロジェクトを削除する。"""
+
+        try:
+            delete_project(project_name)
+        except (ProjectNotFoundError, ProjectStoreError) as exc:
+            QMessageBox.critical(self, "削除エラー", str(exc))
+            return False
+
+        if self.project_name_text() == project_name:
+            self.reset_project_state(clear_project_name=True)
+        QMessageBox.information(self, "削除完了", f"プロジェクト「{project_name}」を削除しました。")
+        return True
+
     def reject(self) -> None:
         """Cancel ボタン経由の終了要求。closeEvent() へ一本化する。
 
@@ -219,6 +302,40 @@ class ReportWizard(QWizard):
         Qt 内部の reject → closeEvent → reject 再入によるダイアログ二重表示を防ぐ。
         """
         self.close()
+
+    def reset_project_state(self, *, clear_project_name: bool) -> None:
+        self._cover_page.clear_form_state()
+        self._overview_page.clear_form_state()
+        self._work_content_page.clear_form_state()
+        self._photo_import_page.clear_project_state()
+        self._photo_arrange_page.reset_items_from_context()
+        if clear_project_name:
+            self._project_page.set_project_name("")
+        self._cover_page.initializePage()
+
+    def _apply_project_state(self, state: dict) -> None:
+        self.reset_project_state(clear_project_name=False)
+        self._project_page.set_project_name(str(state.get("project_name", "")))
+        self._cover_page.apply_form_state(dict(state.get("cover_state", {})))
+        self._overview_page.apply_form_state(dict(state.get("overview_state", {})))
+        self._work_content_page.apply_form_state(dict(state.get("work_content_state", {})))
+        self._photo_import_page.apply_import_settings_state(dict(state.get("photo_import_settings", {})))
+        self._photo_import_page.replace_photo_items(list(state.get("photo_items", [])))
+        self._photo_arrange_page.reset_items_from_context()
+        self._cover_page.initializePage()
+
+    def _collect_project_save_kwargs(self) -> dict:
+        photo_items = self.arranged_photo_items()
+        if not photo_items:
+            photo_items = self.imported_photo_items()
+        return {
+            "project_name": self.project_name_text(),
+            "cover_state": self._cover_page.form_state(),
+            "overview_state": self._overview_page.form_state(),
+            "work_content_state": self._work_content_page.form_state(),
+            "photo_import_settings": self._photo_import_page.import_settings_state(),
+            "photo_items": photo_items,
+        }
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Cancel・×ボタン・Alt+F4 すべての終了経路の一本化ゲート。
@@ -390,6 +507,14 @@ class ReportWizard(QWizard):
         is_visible = page_id > 0
         back_button.setVisible(is_visible)
         back_button.setEnabled(is_visible)
+
+        save_button = self.button(QWizard.WizardButton.CustomButton1)
+        if save_button is None:
+            return
+        save_button.setText("プロジェクトを保存")
+        show_save_button = page_id >= 1
+        save_button.setVisible(show_save_button)
+        save_button.setEnabled(show_save_button and bool(self.project_name_text()))
 
     def _confirm_project_discard(self) -> bool:
         """入力中プロジェクトを破棄して終了するか確認する。

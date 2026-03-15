@@ -91,6 +91,9 @@ class CoverFormPage(QWizardPage):
         super().__init__(parent)
         self.setTitle("表紙情報")
         self.setSubTitle("報告書の表紙に記載する情報を入力してください。")
+        self._default_report_date = QDate.currentDate()
+        self._default_start_date = QDate.currentDate()
+        self._default_end_date = QDate.currentDate()
 
         # ── (1) 報告書作成年月日 ──
         # カレンダーポップアップ付きの日付選択。デフォルトは今日の日付。
@@ -254,6 +257,40 @@ class CoverFormPage(QWizardPage):
     def format_start_date(self) -> str:
         """開始日だけを写真説明用の文字列として返す。"""
         return _format_date_with_dow(self._start_date.date())
+
+    def form_state(self) -> dict:
+        return {
+            "report_date": self._report_date.date().toString(Qt.DateFormat.ISODate),
+            "recipient": self._recipient_edit.text(),
+            "title": self._title_edit.text(),
+            "subtitle": self._subtitle_edit.text(),
+            "building": self._building_edit.text(),
+            "address": self._address_edit.text(),
+            "start_date": self._start_date.date().toString(Qt.DateFormat.ISODate),
+            "range_enabled": self._range_check.isChecked(),
+            "end_date": self._end_date.date().toString(Qt.DateFormat.ISODate),
+        }
+
+    def apply_form_state(self, state: dict) -> None:
+        self._report_date.setDate(self._date_from_state(state.get("report_date"), self._default_report_date))
+        self._recipient_edit.setText(str(state.get("recipient", "")))
+        self._title_edit.setText(str(state.get("title", "")))
+        self._subtitle_edit.setText(str(state.get("subtitle", "")))
+        self._building_edit.setText(str(state.get("building", "")))
+        self._address_edit.setText(str(state.get("address", "")))
+        self._start_date.setDate(self._date_from_state(state.get("start_date"), self._default_start_date))
+        self._range_check.setChecked(bool(state.get("range_enabled", False)))
+        self._end_date.setDate(self._date_from_state(state.get("end_date"), self._default_end_date))
+
+    def clear_form_state(self) -> None:
+        self.apply_form_state({})
+
+    def _date_from_state(self, raw_value: object, fallback: QDate) -> QDate:
+        if isinstance(raw_value, str) and raw_value:
+            parsed = QDate.fromString(raw_value, Qt.DateFormat.ISODate)
+            if parsed.isValid():
+                return parsed
+        return fallback
 
     # ── データ収集 ────────────────────────────────────────
 
