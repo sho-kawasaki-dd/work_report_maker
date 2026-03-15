@@ -1,3 +1,10 @@
+@font-face {
+  font-family: 'IPAex Mincho';
+  src: url('../fonts/ipaexm.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
 @page {
   size: A4;
   margin: 10mm 5mm 10mm 20mm;
@@ -10,7 +17,7 @@ body {
 }
 
 body {
-  font-family: 'MS Gothic', sans-serif;
+  font-family: 'IPAex Mincho', serif;
   color: #111;
   line-height: 1.35;
 }
