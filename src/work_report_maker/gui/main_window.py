@@ -20,7 +20,7 @@ import re
 from pathlib import Path
 
 from PySide6.QtGui import QCloseEvent, QShowEvent
-from PySide6.QtWidgets import QFileDialog, QMessageBox, QWizard
+from PySide6.QtWidgets import QDialog, QFileDialog, QMessageBox, QWizard
 
 from work_report_maker.gui.pages.cover_form_page import CoverFormPage
 from work_report_maker.gui.pages.overview_form_page import OverviewFormPage
@@ -73,15 +73,15 @@ class ReportWizard(QWizard):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("報告書作成")
-        self.setMinimumSize(640, 520)
+        self.setMinimumSize(1000, 800)
         # Windows の AeroStyle は Back を左上の小さな矢印として描画するため、
         # 今回求められている「Next の左側に並ぶ Back」を安定して出すには、
         # 下部のボタン列を使う ClassicStyle へ固定しておく必要がある。
         self.setWizardStyle(QWizard.WizardStyle.ClassicStyle)
-        # reject() から super().reject() を呼ぶと closeEvent() も続けて発火する。
-        # そのままだと終了確認ダイアログが二重表示されるため、このフラグで
-        # 「reject 由来の closeEvent は素通しする」一回限りの経路を作る。
-        self._closing_via_reject = False
+        # reject() → close() → closeEvent() → super().closeEvent() → reject() のように
+        # Qt 内部で再入が起きると確認ダイアログが二重表示される。_close_guard で
+        # closeEvent 処理中の再入を検出し、確認ダイアログは必ず 1 回だけにする。
+        self._close_guard = False
 
         # ウィザードページのインスタンスを作成
         self._project_page = ProjectNamePage()
@@ -212,37 +212,42 @@ class ReportWizard(QWizard):
         return arrange_stopped and import_stopped
 
     def reject(self) -> None:
-        """Cancel ボタン経由の終了要求を確認付きで処理する。
+        """Cancel ボタン経由の終了要求。closeEvent() へ一本化する。
 
-        QWizard の Cancel は reject() を通るため、ここで確認ダイアログと
-        バックグラウンド処理の停止確認を一元化する。実際の window close は
-        super().reject() に任せ、closeEvent() 側では二重確認だけ回避する。
+        QWizard の Cancel ボタンは reject() を呼ぶが、確認ダイアログの表示は
+        closeEvent() 側に集約する。reject() 自体は close() を呼ぶだけにすることで、
+        Qt 内部の reject → closeEvent → reject 再入によるダイアログ二重表示を防ぐ。
         """
-
-        if not self._confirm_project_discard():
-            return
-        if not self._can_close_wizard():
-            return
-
-        self._closing_via_reject = True
-        try:
-            super().reject()
-        finally:
-            self._closing_via_reject = False
+        self.close()
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        # reject() 由来の closeEvent は、すでに確認とガードを通過済みなのでそのまま閉じる。
-        if self._closing_via_reject:
-            super().closeEvent(event)
+        """Cancel・×ボタン・Alt+F4 すべての終了経路の一本化ゲート。
+
+        Qt 内部では closeEvent 完了後に reject() が呼ばれるケースがあり、
+        reject() → close() → closeEvent() の再入が起きうる。_close_guard で
+        確認ダイアログが複数回表示されるのを防ぐ。
+
+        super().closeEvent() は呼ばず event を直接操作することで、
+        Qt のコールバック連鎖を一切発生させない。
+        """
+        if self._close_guard:
+            event.accept()
             return
-        # タイトルバーの閉じる操作でも Cancel と同じ UX に揃える。
-        if not self._confirm_project_discard():
-            event.ignore()
-            return
-        if not self._can_close_wizard():
-            event.ignore()
-            return
-        super().closeEvent(event)
+        self._close_guard = True
+        try:
+            if not self._confirm_project_discard():
+                event.ignore()
+                return
+            if not self._can_close_wizard():
+                event.ignore()
+                return
+            self.setResult(int(QDialog.DialogCode.Rejected))
+            event.accept()
+        finally:
+            # 終了が成立しなかった場合のみガードを解除し、再試行を許可する。
+            # 終了が成立した場合はガードを立てたまま再入に備える。
+            if not event.isAccepted():
+                self._close_guard = False
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)

@@ -62,29 +62,21 @@ def test_back_button_is_hidden_on_first_page_and_visible_after_next(qtbot) -> No
         wizard.hide()
 
 
-def test_reject_cancel_shows_confirmation_and_stays_open_on_no(qtbot, monkeypatch) -> None:
+def test_reject_delegates_to_close(qtbot, monkeypatch) -> None:
+    """Cancel ボタン (reject) は close() に委譲するだけ。"""
     wizard = ReportWizard()
     qtbot.addWidget(wizard)
 
-    questions: list[tuple[str, str]] = []
-    rejected: list[bool] = []
-    monkeypatch.setattr(
-        QMessageBox,
-        "question",
-        lambda parent, title, text, buttons, default: (
-            questions.append((title, text))
-            or QMessageBox.StandardButton.No
-        ),
-    )
-    monkeypatch.setattr(QWizard, "reject", lambda self: rejected.append(True))
+    close_calls: list[bool] = []
+    monkeypatch.setattr(wizard, "close", lambda: close_calls.append(True))
 
     wizard.reject()
 
-    assert questions == [("終了確認", "プロジェクトを破棄してアプリを終了しますか？")]
-    assert rejected == []
+    assert close_calls == [True]
 
 
-def test_reject_cancel_confirms_and_calls_base_reject_on_yes(qtbot, monkeypatch) -> None:
+def test_close_event_confirmation_yes_closes_with_rejected_result(qtbot, monkeypatch) -> None:
+    """確認 Yes → event accepted + result = Rejected。"""
     wizard = ReportWizard()
     qtbot.addWidget(wizard)
 
@@ -95,12 +87,35 @@ def test_reject_cancel_confirms_and_calls_base_reject_on_yes(qtbot, monkeypatch)
     )
     monkeypatch.setattr(wizard, "stop_active_photo_operations", lambda: True)
 
-    rejected: list[bool] = []
-    monkeypatch.setattr(QWizard, "reject", lambda self: rejected.append(True))
+    result_codes: list[int] = []
+    monkeypatch.setattr(wizard, "setResult", lambda code: result_codes.append(code))
 
-    wizard.reject()
+    event = QCloseEvent()
+    wizard.closeEvent(event)
 
-    assert rejected == [True]
+    assert event.isAccepted() is True
+    assert result_codes == [int(QDialog.DialogCode.Rejected)]
+
+
+def test_close_guard_prevents_reentrant_dialog(qtbot, monkeypatch) -> None:
+    """再入ガード: _close_guard が立っている間は確認なしで即 accept。"""
+    wizard = ReportWizard()
+    qtbot.addWidget(wizard)
+
+    wizard._close_guard = True
+
+    questions: list[tuple] = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args, **kwargs: (questions.append(args) or QMessageBox.StandardButton.No),
+    )
+
+    event = QCloseEvent()
+    wizard.closeEvent(event)
+
+    assert event.isAccepted() is True
+    assert questions == []
 
 
 def test_close_event_confirmation_no_keeps_window_open(qtbot, monkeypatch) -> None:
