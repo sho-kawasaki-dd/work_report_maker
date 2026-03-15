@@ -9,196 +9,104 @@ PhotoItem データクラスとしてメモリ上に保持する。
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QObject, QThread, Qt, Signal
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
-    QProgressDialog,
     QPushButton,
-    QSlider,
-    QSpinBox,
     QVBoxLayout,
     QWizardPage,
 )
 
-from work_report_maker.services.image_processor import (
-    collect_image_paths,
-    is_pngquant_available,
-    process_image,
+from work_report_maker.gui.pages.photo_import_controls import PhotoImportCompressionControls
+from work_report_maker.gui.pages.photo_import_operation import (
+    PhotoImportOperationController,
+    _format_failure_message,
+    _ImportWorker,
 )
+from work_report_maker.gui.pages.photo_models import PhotoDescriptionDefaults, PhotoItem
+from work_report_maker.services.image_processor import collect_image_paths, is_pngquant_available
 
 if TYPE_CHECKING:
     from work_report_maker.gui.main_window import ReportWizard
 
-# サムネイルの一辺サイズ (px)
-_THUMBNAIL_SIZE = 128
-_ITEM_BATCH_SIZE = 8
-_SYNCED_DESCRIPTION_FIELDS = ("site", "work_date", "location")
-
-
-@dataclass(frozen=True)
-class PhotoDescriptionDefaults:
-    """写真説明欄へ注入する既定値セット。"""
-
-    site: str = ""
-    work_date: str = ""
-    location: str = ""
-
-
-@dataclass
-class PhotoItem:
-    """圧縮済み画像データを保持するデータクラス。"""
-
-    filename: str
-    data: bytes  # 圧縮済みバイト列
-    format: str  # "jpeg" or "png"
-    thumbnail: QImage | None = None  # サムネイル用 (ワーカースレッドで生成可能)
-    site: str = ""
-    work_date: str = ""
-    location: str = ""
-    work_content: str = ""
-    remarks: str = ""
-    _default_description_values: dict[str, str] = field(default_factory=dict, repr=False)
-    _user_edited_description_fields: set[str] = field(default_factory=set, repr=False)
-
-    def apply_initial_description_defaults(self, defaults: PhotoDescriptionDefaults) -> None:
-        """取り込み直後の既定値を注入する。"""
-        self.sync_description_defaults(defaults, force=True)
-
-    def sync_description_defaults(
-        self,
-        defaults: PhotoDescriptionDefaults,
-        *,
-        force: bool = False,
-    ) -> None:
-        """未編集項目にだけ既定値を反映し、最新の既定値スナップショットを保持する。"""
-        for field_name, value in {
-            "site": defaults.site,
-            "work_date": defaults.work_date,
-            "location": defaults.location,
-        }.items():
-            current_value = getattr(self, field_name)
-            previous_default = self._default_description_values.get(field_name, "")
-            should_update = force or (
-                field_name not in self._user_edited_description_fields
-                and (current_value == "" or current_value == previous_default)
-            )
-            if should_update:
-                setattr(self, field_name, value)
-            self._default_description_values[field_name] = value
-
-    def set_description_field(self, field_name: str, value: str) -> None:
-        """説明項目を更新し、ユーザー編集済みとして扱う。"""
-        if field_name not in {"site", "work_date", "location", "work_content", "remarks"}:
-            raise ValueError(f"Unsupported description field: {field_name}")
-        setattr(self, field_name, value)
-        self._user_edited_description_fields.add(field_name)
-
-    def is_description_field_user_edited(self, field_name: str) -> bool:
-        """指定した説明項目がユーザー編集済みかどうかを返す。"""
-        return field_name in self._user_edited_description_fields
-
-
-def _make_thumbnail(data: bytes, size: int = _THUMBNAIL_SIZE) -> QImage:
-    """圧縮済みバイト列からサムネイル QImage を生成する。"""
-    img = QImage()
-    img.loadFromData(data)
-    if img.isNull():
-        return QImage()
-    return img.scaled(
-        size,
-        size,
-        Qt.AspectRatioMode.KeepAspectRatio,
-        Qt.TransformationMode.SmoothTransformation,
-    )
-
-
-# ── QThread ワーカー ──────────────────────────────────────
-
-
-class _ImportWorker(QObject):
-    """画像読み込み・圧縮をバックグラウンドで実行するワーカー。"""
-
-    progress = Signal(int)  # 処理済み件数
-    items_ready = Signal(object)  # list[PhotoItem]
-    failures_ready = Signal(object)  # list[tuple[str, str]]
-    finished = Signal()
-    error = Signal(str)
+class _PhotoImportListController:
+    """PhotoItem 一覧と QListWidget の同期を扱う。"""
 
     def __init__(
         self,
-        paths: list[Path],
-        dpi: int,
-        jpeg_quality: int,
-        png_quality_max: int,
+        *,
+        list_widget: QListWidget,
+        count_label: QLabel,
+        defaults_getter,
+        notify_complete_changed,
     ) -> None:
-        super().__init__()
-        self._paths = paths
-        self._dpi = dpi
-        self._jpeg_quality = jpeg_quality
-        self._png_quality_max = png_quality_max
-        self._cancelled = False
+        self._list_widget = list_widget
+        self._count_label = count_label
+        self._defaults_getter = defaults_getter
+        self._notify_complete_changed = notify_complete_changed
+        self._photo_items: list[PhotoItem] = []
 
-    def cancel(self) -> None:
-        self._cancelled = True
+    @property
+    def photo_items(self) -> list[PhotoItem]:
+        return self._photo_items
 
-    def run(self) -> None:
-        failures: list[tuple[str, str]] = []
-        pending_items: list[PhotoItem] = []
+    def sync_photo_item_defaults(self) -> None:
+        defaults = self._defaults_getter()
+        for item in self._photo_items:
+            item.sync_description_defaults(defaults)
+
+    def add_items(self, items: list[PhotoItem]) -> None:
+        defaults = self._defaults_getter()
+        for item in items:
+            item.sync_description_defaults(defaults)
+        self._photo_items.extend(items)
+        self._append_list_items(items)
+        self._update_count_label()
+        self._notify_complete_changed()
+
+    def remove_items(self, items: list[PhotoItem]) -> None:
+        removed = False
+        for item in items:
+            if item in self._photo_items:
+                self._photo_items.remove(item)
+                removed = True
+
+        if removed:
+            self.rebuild_list()
+
+    def rebuild_list(self) -> None:
+        self._list_widget.clear()
+        self._append_list_items(self._photo_items)
+        self._update_count_label()
+        self._notify_complete_changed()
+
+    def clear_all(self) -> None:
+        self._photo_items.clear()
+        self._list_widget.clear()
+        self._update_count_label()
+        self._notify_complete_changed()
+
+    def _append_list_items(self, items: list[PhotoItem]) -> None:
+        self._list_widget.setUpdatesEnabled(False)
         try:
-            for i, path in enumerate(self._paths):
-                if self._cancelled:
-                    break
-                try:
-                    data, fmt = process_image(
-                        path,
-                        dpi=self._dpi,
-                        jpeg_quality=self._jpeg_quality,
-                        png_quality_max=self._png_quality_max,
-                    )
-                    item = PhotoItem(
-                        filename=path.name,
-                        data=data,
-                        format=fmt,
-                        thumbnail=_make_thumbnail(data),
-                    )
-                    pending_items.append(item)
-                    if len(pending_items) >= _ITEM_BATCH_SIZE:
-                        self.items_ready.emit(pending_items)
-                        pending_items = []
-                except Exception as exc:
-                    # 個別の画像が読み込めなくても他の画像は継続
-                    reason = str(exc).strip() or exc.__class__.__name__
-                    failures.append((path.name, reason))
-                self.progress.emit(i + 1)
+            for item in items:
+                list_item = QListWidgetItem(item.filename)
+                if item.thumbnail is not None and not item.thumbnail.isNull():
+                    list_item.setIcon(QIcon(QPixmap.fromImage(item.thumbnail)))
+                self._list_widget.addItem(list_item)
         finally:
-            if pending_items:
-                self.items_ready.emit(pending_items)
-            if failures:
-                self.failures_ready.emit(failures)
-            self.finished.emit()
+            self._list_widget.setUpdatesEnabled(True)
 
-
-def _format_failure_message(failures: list[tuple[str, str]]) -> str:
-    """失敗したファイル一覧をユーザー向けの短いメッセージに整形する。"""
-    preview = failures[:3]
-    lines = [f"{len(failures)} 件の画像を読み込めませんでした。"]
-    for filename, reason in preview:
-        lines.append(f"- {filename}: {reason}")
-    remaining = len(failures) - len(preview)
-    if remaining > 0:
-        lines.append(f"...ほか {remaining} 件")
-    return "\n".join(lines)
+    def _update_count_label(self) -> None:
+        count = len(self._photo_items)
+        self._count_label.setText(f"{count} 枚の画像を読み込みました")
 
 
 # ── メインページ ──────────────────────────────────────────
@@ -220,11 +128,7 @@ class PhotoImportPage(QWizardPage):
         self.setTitle("写真インポート")
         self.setSubTitle("報告書に含める写真を読み込んでください。")
 
-        self._photo_items: list[PhotoItem] = []
-        self._import_thread: QThread | None = None
-        self._import_worker: _ImportWorker | None = None
-        self._import_progress: QProgressDialog | None = None
-        self._import_failures: list[tuple[str, str]] = []
+        self._import_operation = PhotoImportOperationController(self)
 
         # ── 読み込みボタン群 ──
         btn_folder = QPushButton("フォルダ読込")
@@ -238,65 +142,27 @@ class PhotoImportPage(QWizardPage):
         btn_layout.addStretch()
 
         # ── 圧縮設定グループ ──
-        self._dpi_slider = QSlider(Qt.Orientation.Horizontal)
-        self._dpi_slider.setRange(72, 300)
-        self._dpi_slider.setValue(150)
-        self._dpi_spin = QSpinBox()
-        self._dpi_spin.setRange(72, 300)
-        self._dpi_spin.setValue(150)
-        self._dpi_slider.valueChanged.connect(self._dpi_spin.setValue)
-        self._dpi_spin.valueChanged.connect(self._dpi_slider.setValue)
-
-        dpi_row = QHBoxLayout()
-        dpi_row.addWidget(QLabel("DPI:"))
-        dpi_row.addWidget(self._dpi_slider, 1)
-        dpi_row.addWidget(self._dpi_spin)
-
-        self._jpeg_slider = QSlider(Qt.Orientation.Horizontal)
-        self._jpeg_slider.setRange(10, 100)
-        self._jpeg_slider.setValue(75)
-        self._jpeg_spin = QSpinBox()
-        self._jpeg_spin.setRange(10, 100)
-        self._jpeg_spin.setValue(75)
-        self._jpeg_slider.valueChanged.connect(self._jpeg_spin.setValue)
-        self._jpeg_spin.valueChanged.connect(self._jpeg_slider.setValue)
-
-        jpeg_row = QHBoxLayout()
-        jpeg_row.addWidget(QLabel("JPEG品質:"))
-        jpeg_row.addWidget(self._jpeg_slider, 1)
-        jpeg_row.addWidget(self._jpeg_spin)
-
-        self._png_slider = QSlider(Qt.Orientation.Horizontal)
-        self._png_slider.setRange(10, 100)
-        self._png_slider.setValue(75)
-        self._png_spin = QSpinBox()
-        self._png_spin.setRange(10, 100)
-        self._png_spin.setValue(75)
-        self._png_slider.valueChanged.connect(self._png_spin.setValue)
-        self._png_spin.valueChanged.connect(self._png_slider.setValue)
-
-        self._png_label = QLabel("PNG品質:")
-        if not is_pngquant_available():
-            self._png_slider.setEnabled(False)
-            self._png_spin.setEnabled(False)
-            self._png_label.setText("PNG品質 (Pillow減色):")
-
-        png_row = QHBoxLayout()
-        png_row.addWidget(self._png_label)
-        png_row.addWidget(self._png_slider, 1)
-        png_row.addWidget(self._png_spin)
-
-        compress_layout = QVBoxLayout()
-        compress_layout.addLayout(dpi_row)
-        compress_layout.addLayout(jpeg_row)
-        compress_layout.addLayout(png_row)
-
-        compress_group = QGroupBox("圧縮設定")
-        compress_group.setLayout(compress_layout)
+        self._compression_controls = PhotoImportCompressionControls(
+            pngquant_available=is_pngquant_available()
+        )
+        self._dpi_slider = self._compression_controls.dpi_slider
+        self._dpi_spin = self._compression_controls.dpi_spin
+        self._jpeg_slider = self._compression_controls.jpeg_slider
+        self._jpeg_spin = self._compression_controls.jpeg_spin
+        self._png_slider = self._compression_controls.png_slider
+        self._png_spin = self._compression_controls.png_spin
+        self._png_label = self._compression_controls.png_label
 
         # ── 読み込み済みリスト ──
         self._list_widget = QListWidget()
         self._count_label = QLabel("0 枚の画像を読み込みました")
+        self._list_controller = _PhotoImportListController(
+            list_widget=self._list_widget,
+            count_label=self._count_label,
+            defaults_getter=self.current_photo_description_defaults,
+            notify_complete_changed=self.completeChanged.emit,
+        )
+        self._photo_items = self._list_controller.photo_items
 
         # ── クリアボタン ──
         btn_clear = QPushButton("すべてクリア")
@@ -316,7 +182,7 @@ class PhotoImportPage(QWizardPage):
         # ── レイアウト組立 ──
         main_layout = QVBoxLayout()
         main_layout.addLayout(btn_layout)
-        main_layout.addWidget(compress_group)
+        main_layout.addWidget(self._compression_controls.group_box)
         main_layout.addWidget(notice)
         main_layout.addWidget(self._list_widget, 1)
         main_layout.addLayout(clear_row)
@@ -326,16 +192,48 @@ class PhotoImportPage(QWizardPage):
 
     @property
     def photo_items(self) -> list[PhotoItem]:
-        return self._photo_items
+        return self._list_controller.photo_items
+
+    @property
+    def _import_thread(self):
+        return self._import_operation.thread
+
+    @_import_thread.setter
+    def _import_thread(self, value) -> None:
+        self._import_operation.thread = value
+
+    @property
+    def _import_worker(self):
+        return self._import_operation.worker
+
+    @_import_worker.setter
+    def _import_worker(self, value) -> None:
+        self._import_operation.worker = value
+
+    @property
+    def _import_progress(self):
+        return self._import_operation.progress
+
+    @_import_progress.setter
+    def _import_progress(self, value) -> None:
+        self._import_operation.progress = value
+
+    @property
+    def _import_failures(self):
+        return self._import_operation.failures
+
+    @_import_failures.setter
+    def _import_failures(self, value) -> None:
+        self._import_operation.failures = value
 
     def dpi(self) -> int:
-        return self._dpi_spin.value()
+        return self._compression_controls.dpi()
 
     def jpeg_quality(self) -> int:
-        return self._jpeg_spin.value()
+        return self._compression_controls.jpeg_quality()
 
     def png_quality_max(self) -> int:
-        return self._png_spin.value()
+        return self._compression_controls.png_quality_max()
 
     def current_photo_description_defaults(self) -> PhotoDescriptionDefaults:
         """現在のウィザード状態から写真説明の既定値を取得する。"""
@@ -349,18 +247,16 @@ class PhotoImportPage(QWizardPage):
 
     def sync_photo_item_defaults(self) -> None:
         """保持中の PhotoItem に最新の既定値を同期する。"""
-        defaults = self.current_photo_description_defaults()
-        for item in self._photo_items:
-            item.sync_description_defaults(defaults)
+        self._list_controller.sync_photo_item_defaults()
 
     # ── バリデーション ────────────────────────────────────
 
     def isComplete(self) -> bool:
-        return len(self._photo_items) > 0
+        return len(self.photo_items) > 0
 
     def initializePage(self) -> None:
         """前ページから戻った際に一覧表示を内部状態へ同期する。"""
-        self._rebuild_photo_list()
+        self._list_controller.rebuild_list()
 
     # ── 読み込み操作 ──────────────────────────────────────
 
@@ -391,88 +287,34 @@ class PhotoImportPage(QWizardPage):
 
     def _run_import(self, paths: list[Path]) -> None:
         """画像読み込み・圧縮をワーカースレッドで実行する。"""
-        if self._import_thread is not None and self._import_thread.isRunning():
-            return
-
-        self._import_failures.clear()
-
-        total = len(paths)
-        worker = _ImportWorker(
+        self._import_operation.start(
             paths,
-            dpi=self._dpi_spin.value(),
-            jpeg_quality=self._jpeg_spin.value(),
-            png_quality_max=self._png_spin.value(),
+            dpi=self.dpi(),
+            jpeg_quality=self.jpeg_quality(),
+            png_quality_max=self.png_quality_max(),
+            on_items_ready=self._add_photo_items,
         )
 
-        thread = QThread(self)
-        worker.moveToThread(thread)
-
-        # モーダルプログレスダイアログ
-        progress = QProgressDialog("画像を読み込んでいます...", "キャンセル", 0, total, self)
-        progress.setWindowModality(Qt.WindowModality.WindowModal)
-        progress.setMinimumDuration(0)
-
-        self._import_thread = thread
-        self._import_worker = worker
-        self._import_progress = progress
-
-        # シグナル接続
-        worker.progress.connect(progress.setValue, Qt.ConnectionType.QueuedConnection)
-        worker.items_ready.connect(self._add_photo_items, Qt.ConnectionType.QueuedConnection)
-        worker.failures_ready.connect(self._record_import_failures, Qt.ConnectionType.QueuedConnection)
-        progress.canceled.connect(self._cancel_import)
-
-        worker.finished.connect(self._on_import_worker_finished, Qt.ConnectionType.QueuedConnection)
-        thread.finished.connect(self._on_import_thread_finished, Qt.ConnectionType.QueuedConnection)
-        thread.started.connect(worker.run, Qt.ConnectionType.QueuedConnection)
-        thread.start()
-
     def _cancel_import(self) -> None:
-        if self._import_worker is not None:
-            self._import_worker.cancel()
+        self._import_operation.request_cancel()
 
     def _on_import_worker_finished(self) -> None:
-        if self._import_thread is not None:
-            self._import_thread.quit()
+        self._import_operation.handle_worker_finished()
 
     def _on_import_thread_finished(self) -> None:
-        self._cleanup_import_state()
-        self._show_import_failures()
+        self._import_operation.handle_thread_finished()
 
     def _cleanup_import_state(self) -> None:
-        if self._import_progress is not None:
-            self._import_progress.close()
-            self._import_progress.deleteLater()
-            self._import_progress = None
-
-        if self._import_worker is not None:
-            self._import_worker.deleteLater()
-            self._import_worker = None
-
-        if self._import_thread is not None:
-            self._import_thread.deleteLater()
-            self._import_thread = None
+        self._import_operation.cleanup()
 
     def cancel_active_import(self) -> bool:
-        if self._import_worker is not None:
-            self._import_worker.cancel()
-        if self._import_thread is not None and self._import_thread.isRunning():
-            self._import_thread.quit()
-            if not self._import_thread.wait(2000):
-                return False
-        self._cleanup_import_state()
-        return True
+        return self._import_operation.cancel_active()
 
     def _record_import_failures(self, failures: list[tuple[str, str]]) -> None:
-        self._import_failures.extend(failures)
+        self._import_operation.record_failures(failures)
 
     def _show_import_failures(self) -> None:
-        if not self._import_failures:
-            return
-
-        message = _format_failure_message(self._import_failures)
-        self._import_failures.clear()
-        QMessageBox.warning(self, "画像読み込みエラー", message)
+        self._import_operation.show_failures()
 
     def add_photo_items(self, items: list[PhotoItem]) -> None:
         """外部ページからの追加も含め、一覧と内部状態をまとめて更新する。"""
@@ -480,51 +322,21 @@ class PhotoImportPage(QWizardPage):
 
     def remove_photo_items(self, items: list[PhotoItem]) -> None:
         """指定した PhotoItem 群を内部状態と一覧から取り除く。"""
-        removed = False
-        for item in items:
-            if item in self._photo_items:
-                self._photo_items.remove(item)
-                removed = True
-
-        if removed:
-            self._rebuild_photo_list()
+        self._list_controller.remove_items(items)
 
     def _add_photo_items(self, items: list[PhotoItem]) -> None:
         """PhotoItem 群をまとめてリストへ追加し、UI 更新回数を抑える。"""
-        defaults = self.current_photo_description_defaults()
-        for item in items:
-            item.sync_description_defaults(defaults)
-        self._photo_items.extend(items)
-        self._append_list_items(items)
-        self._update_count_label()
-        self.completeChanged.emit()
+        self._list_controller.add_items(items)
 
     def _append_list_items(self, items: list[PhotoItem]) -> None:
-        from PySide6.QtGui import QIcon
-
-        self._list_widget.setUpdatesEnabled(False)
-        try:
-            for item in items:
-                list_item = QListWidgetItem(item.filename)
-                if item.thumbnail is not None and not item.thumbnail.isNull():
-                    list_item.setIcon(QIcon(QPixmap.fromImage(item.thumbnail)))
-                self._list_widget.addItem(list_item)
-        finally:
-            self._list_widget.setUpdatesEnabled(True)
+        self._list_controller._append_list_items(items)
 
     def _rebuild_photo_list(self) -> None:
-        self._list_widget.clear()
-        self._append_list_items(self._photo_items)
-        self._update_count_label()
-        self.completeChanged.emit()
+        self._list_controller.rebuild_list()
 
     def _clear_all(self) -> None:
         """読み込み済み画像をすべてクリアする。"""
-        self._photo_items.clear()
-        self._list_widget.clear()
-        self._update_count_label()
-        self.completeChanged.emit()
+        self._list_controller.clear_all()
 
     def _update_count_label(self) -> None:
-        count = len(self._photo_items)
-        self._count_label.setText(f"{count} 枚の画像を読み込みました")
+        self._list_controller._update_count_label()
