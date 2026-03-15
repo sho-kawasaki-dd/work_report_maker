@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import json
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QImage, QKeyEvent
+from PySide6.QtWidgets import QMessageBox
 
 from work_report_maker.gui.main_window import ReportWizard
 from work_report_maker.gui.pages.photo_import_page import PhotoItem
@@ -325,9 +325,10 @@ def test_build_photos_reflects_arranged_order_and_description_values(qtbot) -> N
     assert photos[0]["photo_path"].startswith("file:///")
 
 
-def test_accept_outputs_photos_with_description_values(qtbot, capsys, monkeypatch) -> None:
+def test_accept_generates_pdf_with_description_values(qtbot, tmp_path, monkeypatch) -> None:
     wizard = ReportWizard()
     qtbot.addWidget(wizard)
+    wizard._project_page._name_edit.setText("京都三条ホテル")
 
     photo = _make_photo_item(
         "a.jpg",
@@ -340,11 +341,35 @@ def test_accept_outputs_photos_with_description_values(qtbot, capsys, monkeypatc
     wizard._photo_import_page.add_photo_items([photo])
     wizard._photo_arrange_page.initializePage()
 
-    monkeypatch.setattr("work_report_maker.gui.main_window.QWizard.accept", lambda self: None)
+    output_path = tmp_path / "exported.pdf"
+    captured: dict[str, object] = {}
+    accepted: list[bool] = []
+    messages: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(
+        "work_report_maker.gui.main_window.QFileDialog.getSaveFileName",
+        lambda *args, **kwargs: (str(output_path), "PDF (*.pdf)"),
+    )
+
+    def _generate(*, report_data=None, json_path=None, output_path=None, optimize_pdf=True) -> None:
+        captured["report_data"] = report_data
+        captured["json_path"] = json_path
+        captured["output_path"] = output_path
+        captured["optimize_pdf"] = optimize_pdf
+
+    monkeypatch.setattr("work_report_maker.gui.main_window.generate_full_report", _generate)
+    monkeypatch.setattr(
+        "work_report_maker.gui.main_window.QWizard.accept",
+        lambda self: accepted.append(True),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda parent, title, text: messages.append((title, text)),
+    )
 
     wizard.accept()
-    captured = capsys.readouterr()
-    payload = json.loads(captured.err)
+    payload = captured["report_data"]
 
     assert len(payload["photos"]) == 1
     assert payload["photos"][0]["site"] == "京都三条ホテル"
@@ -352,3 +377,34 @@ def test_accept_outputs_photos_with_description_values(qtbot, capsys, monkeypatc
     assert payload["photos"][0]["location"] == "1階厨房"
     assert payload["photos"][0]["work_content"] == "グリストラップ清掃"
     assert payload["photos"][0]["remarks"] == "異常なし"
+    assert captured["output_path"] == output_path
+    assert captured["optimize_pdf"] is True
+    assert accepted == [True]
+    assert messages == [("PDF 生成完了", f"PDF を保存しました。\n{output_path}")]
+
+
+def test_accept_does_not_generate_pdf_when_save_dialog_is_cancelled(qtbot, monkeypatch) -> None:
+    wizard = ReportWizard()
+    qtbot.addWidget(wizard)
+    wizard._project_page._name_edit.setText("京都三条ホテル")
+
+    generated: list[bool] = []
+    accepted: list[bool] = []
+
+    monkeypatch.setattr(
+        "work_report_maker.gui.main_window.QFileDialog.getSaveFileName",
+        lambda *args, **kwargs: ("", ""),
+    )
+    monkeypatch.setattr(
+        "work_report_maker.gui.main_window.generate_full_report",
+        lambda **kwargs: generated.append(True),
+    )
+    monkeypatch.setattr(
+        "work_report_maker.gui.main_window.QWizard.accept",
+        lambda self: accepted.append(True),
+    )
+
+    wizard.accept()
+
+    assert generated == []
+    assert accepted == []

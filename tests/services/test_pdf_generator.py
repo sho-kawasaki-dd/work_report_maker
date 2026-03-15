@@ -4,10 +4,12 @@ from copy import deepcopy
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
+import pytest
 
 from work_report_maker.config import PROJECT_ROOT, TEMPLATES_DIR
 from work_report_maker.models.loader import load_input_data
 from work_report_maker.services.pdf_generator import generate_full_report, prepare_report_for_render
+from work_report_maker.services.pdf_optimizer import optimize_pdf_structure
 
 
 _DUMMY_PHOTO_PATH = PROJECT_ROOT / "tests" / "temp" / "IMG_20260218_215726354.jpg"
@@ -67,3 +69,41 @@ def test_generate_full_report_keeps_500_photos_at_three_per_page(tmp_path: Path)
 
     assert output_path.exists()
     assert output_path.stat().st_size > 0
+
+
+def test_generate_full_report_runs_optimizer_by_default(tmp_path: Path, monkeypatch) -> None:
+    raw_report = _build_raw_report_with_photo_count(1)
+    output_path = tmp_path / "optimized_report.pdf"
+    optimized_paths: list[Path] = []
+
+    monkeypatch.setattr(
+        "work_report_maker.services.pdf_generator.optimize_pdf_structure",
+        lambda path: optimized_paths.append(path),
+    )
+
+    generate_full_report(report_data=raw_report, output_path=output_path)
+
+    assert output_path.exists()
+    assert optimized_paths == [output_path]
+
+
+def test_optimize_pdf_structure_preserves_docinfo_metadata(tmp_path: Path) -> None:
+    pikepdf = pytest.importorskip("pikepdf")
+    raw_report = _build_raw_report_with_photo_count(1)
+    output_path = tmp_path / "metadata_report.pdf"
+
+    generate_full_report(report_data=raw_report, output_path=output_path, optimize_pdf=False)
+
+    with pikepdf.open(output_path) as pdf:
+        before_metadata = {str(key): str(value) for key, value in pdf.docinfo.items()}
+
+    assert before_metadata
+
+    optimize_pdf_structure(output_path)
+
+    with pikepdf.open(output_path) as pdf:
+        after_metadata = {str(key): str(value) for key, value in pdf.docinfo.items()}
+
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0
+    assert after_metadata == before_metadata

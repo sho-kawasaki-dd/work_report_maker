@@ -9,18 +9,18 @@ QWizard ベースのウィザード形式 UI。ページ遷移:
     Step 6: PhotoArrangePage  — 写真並び替え・追加・削除
     Step 7: PhotoDescriptionPage — 写真説明の確認・入力
 
-ウィザード完了時（「完了」ボタン押下）に全フォームデータを
-raw_report.json の cover/overview 構造に合わせた JSON として stderr に出力する。
-（Phase 1 の確認用。後続フェーズで PDF 生成連携に置き換え予定。）
+ウィザード完了時（「完了」ボタン押下）に全フォームデータを raw report 互換 payload へ束ね、
+保存ダイアログで確定した出力先へ PDF を生成する。PDF 生成本体は services 層の
+`generate_full_report(...)` を再利用し、GUI は保存先選択とエラー表示だけを担う。
 """
 
 from __future__ import annotations
 
-import json
-import sys
+import re
+from pathlib import Path
 
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QMessageBox, QWizard
+from PySide6.QtWidgets import QFileDialog, QMessageBox, QWizard
 
 from work_report_maker.gui.pages.cover_form_page import CoverFormPage
 from work_report_maker.gui.pages.overview_form_page import OverviewFormPage
@@ -29,6 +29,7 @@ from work_report_maker.gui.pages.photo_description_page import PhotoDescriptionP
 from work_report_maker.gui.pages.photo_import_page import PhotoDescriptionDefaults, PhotoImportPage, PhotoItem
 from work_report_maker.gui.pages.project_name_page import ProjectNamePage
 from work_report_maker.gui.pages.work_content_page import WorkContentPage
+from work_report_maker.gui.preset_manager import load_default_output_dir
 from work_report_maker.gui.report_build_helper import build_photos_payload, build_report_payload
 from work_report_maker.gui.wizard_contexts import (
     CoverDisplayInfo,
@@ -38,6 +39,18 @@ from work_report_maker.gui.wizard_contexts import (
     WorkContentDefaults,
     load_company_lines,
 )
+from work_report_maker.services.pdf_generator import generate_full_report
+
+
+_INVALID_PDF_STEM_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def _sanitize_pdf_stem(name: str) -> str:
+    """保存ダイアログの初期提案に使う安全な stem 文字列を返す。"""
+
+    # ここでは初期値だけを安全化し、ユーザーがダイアログで最終的に選んだ名前はそのまま尊重する。
+    sanitized = _INVALID_PDF_STEM_CHARS.sub("_", name).strip().rstrip(". ")
+    return sanitized or "report"
 
 
 class ReportWizard(QWizard):
@@ -198,13 +211,25 @@ class ReportWizard(QWizard):
     def accept(self) -> None:
         """ウィザード完了時の処理。
 
-        全ページのフォームデータを収集し、raw_report.json の cover/overview/photos
-        構造に合わせた JSON を stderr に出力する。
-        写真データは一時ディレクトリに書き出し file:// URI で参照する。
+        保存ダイアログで出力先を確定し、共通の PDF 生成サービスへ入力を渡す。
+
+        生成失敗時でも photo 用の一時ディレクトリだけは確実に回収し、ウィザード自体は閉じない。
+        これにより、ユーザーは保存先修正や再実行をその場でやり直せる。
         """
-        result = self._build_report_payload()
-        # 確認用に stderr へ JSON ダンプ（PDF 生成連携は後続フェーズ）
-        print(json.dumps(result, ensure_ascii=False, indent=2), file=sys.stderr)
+        output_path = self._choose_output_path()
+        if output_path is None:
+            return
+
+        try:
+            result = self._build_report_payload()
+            generate_full_report(report_data=result, output_path=output_path)
+        except Exception as exc:
+            QMessageBox.critical(self, "PDF 生成エラー", f"PDF の生成に失敗しました。\n{exc}")
+            return
+        finally:
+            self._cleanup_photo_tmp_dir()
+
+        QMessageBox.information(self, "PDF 生成完了", f"PDF を保存しました。\n{output_path}")
         super().accept()
 
     def _build_report_payload(self) -> dict:
@@ -232,3 +257,45 @@ class ReportWizard(QWizard):
         built_photos = build_photos_payload(self.arranged_photo_items())
         self._photo_tmp_dir = built_photos.temp_dir
         return built_photos.photos
+
+    def _selected_output_directory(self) -> Path:
+        """保存ダイアログの初期フォルダとして使うディレクトリを返す。"""
+
+        # field() は文字列で返るため、未設定や空文字のときだけ永続設定の fallback へ戻す。
+        field_value = self.field("output_dir")
+        if isinstance(field_value, str) and field_value.strip():
+            return Path(field_value)
+        return load_default_output_dir()
+
+    def _choose_output_path(self) -> Path | None:
+        """保存ダイアログを開き、最終的な PDF 出力パスを返す。"""
+
+        project_name = self.field("project_name")
+        project_name_text = project_name if isinstance(project_name, str) else ""
+        initial_path = self._selected_output_directory() / f"{_sanitize_pdf_stem(project_name_text)}.pdf"
+
+        selected_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "保存する PDF ファイルを選択",
+            str(initial_path),
+            "PDF (*.pdf)",
+        )
+        if not selected_path:
+            return None
+
+        output_path = Path(selected_path)
+        if output_path.suffix.lower() != ".pdf":
+            # ユーザーが拡張子を省略しても PDF 保存であることは固定する。
+            output_path = output_path.with_suffix(".pdf")
+        if not output_path.parent.exists():
+            QMessageBox.warning(self, "保存先エラー", "指定した保存先フォルダが存在しません。")
+            return None
+        return output_path
+
+    def _cleanup_photo_tmp_dir(self) -> None:
+        """report payload 構築中に確保した一時ディレクトリを解放する。"""
+
+        if self._photo_tmp_dir is None:
+            return
+        self._photo_tmp_dir.cleanup()
+        self._photo_tmp_dir = None

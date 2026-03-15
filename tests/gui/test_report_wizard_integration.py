@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -8,6 +9,7 @@ from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QMessageBox
 
 from work_report_maker.gui.main_window import ReportWizard
+from work_report_maker.gui.pages.project_name_page import ProjectNamePage
 
 
 def test_overview_and_work_content_follow_cover_accessors(qtbot) -> None:
@@ -50,3 +52,45 @@ def test_close_event_ignores_when_photo_operations_are_still_stopping(qtbot, mon
             "画像の読み込み処理を停止しています。数秒待ってから再度閉じてください。",
         )
     ]
+
+
+def test_project_name_page_loads_default_output_directory(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        "work_report_maker.gui.pages.project_name_page.load_default_output_dir",
+        lambda: tmp_path,
+    )
+
+    page = ProjectNamePage()
+
+    assert page._output_dir_edit.text() == str(tmp_path)
+
+
+def test_project_name_page_browse_updates_and_saves_output_directory(monkeypatch, tmp_path) -> None:
+    selected_dir = tmp_path / "exports"
+    selected_dir.mkdir()
+    saved_paths: list[Path] = []
+
+    monkeypatch.setattr(
+        "work_report_maker.gui.pages.project_name_page.load_default_output_dir",
+        lambda: tmp_path,
+    )
+    monkeypatch.setattr(
+        "work_report_maker.gui.pages.project_name_page.QFileDialog.getExistingDirectory",
+        lambda *args, **kwargs: str(selected_dir),
+    )
+
+    def _save(path: str | Path) -> Path:
+        resolved = Path(path)
+        saved_paths.append(resolved)
+        return resolved
+
+    monkeypatch.setattr(
+        "work_report_maker.gui.pages.project_name_page.save_default_output_dir",
+        _save,
+    )
+
+    page = ProjectNamePage()
+    page._choose_output_directory()
+
+    assert page._output_dir_edit.text() == str(selected_dir)
+    assert saved_paths == [selected_dir]

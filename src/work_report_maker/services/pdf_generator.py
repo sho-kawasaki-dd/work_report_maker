@@ -17,6 +17,7 @@ from work_report_maker.config import (
 )
 from work_report_maker.models.loader import detect_report_format, load_input_data
 from work_report_maker.models.validator import validate_report_data
+from work_report_maker.services.pdf_optimizer import optimize_pdf_structure
 from work_report_maker.services.report_adapter import build_report_from_raw
 
 _weasyprint_html_class: type | None = None
@@ -100,6 +101,7 @@ def generate_full_report(
     *,
     json_path: Path | None = None,
     output_path: Path = OUTPUT_PDF,
+    optimize_pdf: bool = True,
 ) -> None:
     """report データまたは JSON から PDF を生成する。"""
 
@@ -112,5 +114,10 @@ def generate_full_report(
     report_context = prepare_report_for_render(report_data) if report_data is not None else build_report_context(json_path)
     html_content = template.render(report=report_context)
 
+    output_path = Path(output_path)
+
     HTML = _get_html_class()
     HTML(string=html_content, base_url=str(TEMPLATES_DIR.resolve())).write_pdf(output_path)
+
+    if optimize_pdf:
+        optimize_pdf_structure(output_path)

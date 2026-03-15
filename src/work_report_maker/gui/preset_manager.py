@@ -32,12 +32,16 @@ import json
 from pathlib import Path
 from typing import Any
 
+from work_report_maker.config import PROJECT_ROOT
+
 # プリセット保存ディレクトリ（ユーザーホーム直下）
 _PRESET_DIR = Path.home() / ".work_report_maker"
 # 建物プリセットファイルパス
 _BUILDING_FILE = _PRESET_DIR / "building_presets.json"
 # 会社情報ファイルパス
 _COMPANY_FILE = _PRESET_DIR / "company_info.json"
+# PDF 出力設定ファイルパス
+_PDF_OUTPUT_FILE = _PRESET_DIR / "pdf_output_settings.json"
 
 
 def _ensure_dir() -> None:
@@ -134,3 +138,60 @@ def save_company_info(info: dict[str, Any]) -> None:
         json.dumps(info, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+# ── PDF 出力設定 ─────────────────────────────────────────────
+
+
+def _resolve_desktop_dir() -> Path:
+    """既定保存先として使う Desktop を返し、なければプロジェクトルートへ落とす。"""
+
+    # GUI 初回起動時でも確実に保存先を返したいため、OS 依存 API ではなく存在確認だけで決める。
+    desktop_dir = Path.home() / "Desktop"
+    if desktop_dir.exists() and desktop_dir.is_dir():
+        return desktop_dir
+    return PROJECT_ROOT
+
+
+def load_default_output_dir() -> Path:
+    """既定の PDF 保存先ディレクトリを返す。
+
+    保存済み JSON が壊れている場合や、以前の保存先が削除済みだった場合でも、呼び出し側へ
+    例外を漏らさず fallback を返して GUI の起動を優先する。
+    """
+
+    fallback_dir = _resolve_desktop_dir()
+    if not _PDF_OUTPUT_FILE.exists():
+        return fallback_dir
+
+    data = json.loads(_PDF_OUTPUT_FILE.read_text("utf-8"))
+    if not isinstance(data, dict):
+        return fallback_dir
+
+    saved_dir = data.get("default_output_dir", "")
+    if not isinstance(saved_dir, str) or not saved_dir.strip():
+        return fallback_dir
+
+    candidate = Path(saved_dir).expanduser()
+    if candidate.exists() and candidate.is_dir():
+        return candidate.resolve()
+    return fallback_dir
+
+
+def save_default_output_dir(directory: str | Path) -> Path:
+    """既定の PDF 保存先ディレクトリを保存する。
+
+    保存前に実在ディレクトリへ正規化しておくことで、以後の GUI 初期表示や保存ダイアログが
+    常に絶対パスを前提に動けるようにする。
+    """
+
+    resolved_dir = Path(directory).expanduser().resolve()
+    if not resolved_dir.exists() or not resolved_dir.is_dir():
+        raise ValueError(f"Output directory does not exist: {resolved_dir}")
+
+    _ensure_dir()
+    _PDF_OUTPUT_FILE.write_text(
+        json.dumps({"default_output_dir": str(resolved_dir)}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return resolved_dir

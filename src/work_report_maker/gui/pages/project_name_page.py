@@ -6,35 +6,82 @@
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWizardPage
+from pathlib import Path
+
+from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWizardPage
+
+from work_report_maker.gui.preset_manager import load_default_output_dir, save_default_output_dir
 
 
 class ProjectNamePage(QWizardPage):
     """プロジェクト名入力用のウィザードページ。
 
     - QLineEdit でプロジェクト名を入力
+        - PDF 保存先フォルダの既定値を表示し、ここで変更できる
     - registerField("project_name*", ...) により必須フィールドとして登録
       → 空欄のままでは「次へ」ボタンが無効化される
 
     このページの責務は入力値の妥当性検査ではなく、以降のページや保存機能が参照する
-    識別子を 1 つ確定させることにある。詳細な保存形式やファイル名変換はここでは扱わない。
+        識別子と出力先の既定値を確定させることにある。最終ファイル名の決定は Finish 時の
+        保存ダイアログへ委譲し、このページではフォルダ既定値の管理だけを担う。
     """
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setTitle("プロジェクト名")
-        self.setSubTitle("報告書プロジェクトの名前を入力してください。")
+        self.setSubTitle("報告書プロジェクト名と PDF の保存先フォルダを確認してください。")
 
         # プロジェクト名入力フィールド
         self._name_edit = QLineEdit()
         self._name_edit.setPlaceholderText("例: ロワジールホテル グリストラップ清掃 2025-03")
 
+        # 保存先は Step 1 で見せておき、以後のプロジェクトでも再利用できるユーザー設定として扱う。
+        self._output_dir_edit = QLineEdit()
+        self._output_dir_edit.setReadOnly(True)
+        self._output_dir_edit.setText(str(load_default_output_dir()))
+
+        browse_button = QPushButton("参照...")
+        browse_button.clicked.connect(self._choose_output_directory)
+
+        output_dir_row = QHBoxLayout()
+        output_dir_row.addWidget(self._output_dir_edit, 1)
+        output_dir_row.addWidget(browse_button)
+
+        output_hint = QLabel("未設定時は Desktop を使い、利用できない場合はプロジェクトルートへ保存します。")
+        output_hint.setWordWrap(True)
+
         layout = QVBoxLayout()
         layout.addWidget(QLabel("プロジェクト名"))
         layout.addWidget(self._name_edit)
+        layout.addWidget(QLabel("PDF 保存先フォルダ"))
+        layout.addLayout(output_dir_row)
+        layout.addWidget(output_hint)
         layout.addStretch()
         self.setLayout(layout)
 
         # フィールド名の末尾 "*" は QWizard の必須フィールド指定
         # → 空欄のままでは「次へ」ボタンが押せなくなる
         self.registerField("project_name*", self._name_edit)
+        self.registerField("output_dir", self._output_dir_edit)
+
+    def output_directory(self) -> Path:
+        """現在 UI に表示している保存先フォルダを返す。"""
+
+        return Path(self._output_dir_edit.text())
+
+    def _choose_output_directory(self) -> None:
+        """保存先フォルダ選択ダイアログを開き、選択結果を永続化する。"""
+
+        current_dir = self._output_dir_edit.text() or str(load_default_output_dir())
+        selected_dir = QFileDialog.getExistingDirectory(self, "PDF 保存先フォルダを選択", current_dir)
+        if not selected_dir:
+            return
+
+        try:
+            resolved_dir = save_default_output_dir(selected_dir)
+        except ValueError:
+            # 永続化層の妥当性検査結果を、そのまま GUI の警告へ変換するだけに留める。
+            QMessageBox.warning(self, "保存先エラー", "指定したフォルダは使用できません。")
+            return
+
+        self._output_dir_edit.setText(str(resolved_dir))
