@@ -8,9 +8,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWizardPage
+from PySide6.QtWidgets import QCheckBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWizardPage
 
-from work_report_maker.gui.preset_manager import load_default_output_dir, save_default_output_dir
+from work_report_maker.gui.preset_manager import (
+    load_close_after_pdf_generation,
+    load_default_output_dir,
+    save_close_after_pdf_generation,
+    save_default_output_dir,
+)
 
 
 class ProjectNamePage(QWizardPage):
@@ -18,6 +23,7 @@ class ProjectNamePage(QWizardPage):
 
     - QLineEdit でプロジェクト名を入力
         - PDF 保存先フォルダの既定値を表示し、ここで変更できる
+        - PDF 生成成功後にアプリを閉じる既定値もここで変更できる
     - registerField("project_name*", ...) により必須フィールドとして登録
       → 空欄のままでは「次へ」ボタンが無効化される
 
@@ -40,6 +46,12 @@ class ProjectNamePage(QWizardPage):
         self._output_dir_edit.setReadOnly(True)
         self._output_dir_edit.setText(str(load_default_output_dir()))
 
+        # PDF 生成成功後に閉じるかどうかも、保存先と同じく「ユーザーごとの既定値」として扱う。
+        # report ごとに一時的な選択ではなく、次回起動時にも引き継ぐ前提で preset_manager へ保存する。
+        self._close_after_generation_check = QCheckBox("PDF生成後にアプリを閉じる")
+        self._close_after_generation_check.setChecked(load_close_after_pdf_generation())
+        self._close_after_generation_check.toggled.connect(self._save_close_after_generation_preference)
+
         browse_button = QPushButton("参照...")
         browse_button.clicked.connect(self._choose_output_directory)
 
@@ -56,6 +68,7 @@ class ProjectNamePage(QWizardPage):
         layout.addWidget(QLabel("PDF 保存先フォルダ"))
         layout.addLayout(output_dir_row)
         layout.addWidget(output_hint)
+        layout.addWidget(self._close_after_generation_check)
         layout.addStretch()
         self.setLayout(layout)
 
@@ -63,11 +76,17 @@ class ProjectNamePage(QWizardPage):
         # → 空欄のままでは「次へ」ボタンが押せなくなる
         self.registerField("project_name*", self._name_edit)
         self.registerField("output_dir", self._output_dir_edit)
+        self.registerField("close_after_pdf_generation", self._close_after_generation_check)
 
     def output_directory(self) -> Path:
         """現在 UI に表示している保存先フォルダを返す。"""
 
         return Path(self._output_dir_edit.text())
+
+    def close_after_pdf_generation(self) -> bool:
+        """成功後にアプリを閉じる設定値を返す。"""
+
+        return self._close_after_generation_check.isChecked()
 
     def _choose_output_directory(self) -> None:
         """保存先フォルダ選択ダイアログを開き、選択結果を永続化する。"""
@@ -85,3 +104,12 @@ class ProjectNamePage(QWizardPage):
             return
 
         self._output_dir_edit.setText(str(resolved_dir))
+
+    def _save_close_after_generation_preference(self, checked: bool) -> None:
+        """成功後の終了設定を永続化する。
+
+        registerField 済みなので wizard 内の field 値は Qt が同期してくれるが、
+        次回起動時の既定値には別途保存が必要なため、UI 変更のたびに即時永続化する。
+        """
+
+        save_close_after_pdf_generation(checked)

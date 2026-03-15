@@ -42,6 +42,7 @@ _BUILDING_FILE = _PRESET_DIR / "building_presets.json"
 _COMPANY_FILE = _PRESET_DIR / "company_info.json"
 # PDF 出力設定ファイルパス
 _PDF_OUTPUT_FILE = _PRESET_DIR / "pdf_output_settings.json"
+_DEFAULT_CLOSE_AFTER_PDF_GENERATION = False
 
 
 def _ensure_dir() -> None:
@@ -143,6 +144,37 @@ def save_company_info(info: dict[str, Any]) -> None:
 # ── PDF 出力設定 ─────────────────────────────────────────────
 
 
+def _load_pdf_output_settings() -> dict[str, Any]:
+    """PDF 出力関連の永続設定を返す。
+
+    保存先フォルダと「生成後に閉じる」設定は同じ JSON に同居させる。
+    片方だけ保存されている過去バージョンのファイルも許容するため、
+    読み込み失敗時は例外ではなく空 dict を返して各 caller 側で fallback する。
+    """
+
+    if not _PDF_OUTPUT_FILE.exists():
+        return {}
+
+    data = json.loads(_PDF_OUTPUT_FILE.read_text("utf-8"))
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
+def _save_pdf_output_settings(settings: dict[str, Any]) -> None:
+    """PDF 出力関連の永続設定を JSON ファイルへ保存する。
+
+    保存先と終了設定を個別ファイルへ分けず、単一 JSON にまとめて更新することで、
+    Step 1 の関連設定を一箇所で管理できるようにしている。
+    """
+
+    _ensure_dir()
+    _PDF_OUTPUT_FILE.write_text(
+        json.dumps(settings, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 def _resolve_desktop_dir() -> Path:
     """既定保存先として使う Desktop を返し、なければプロジェクトルートへ落とす。"""
 
@@ -161,11 +193,8 @@ def load_default_output_dir() -> Path:
     """
 
     fallback_dir = _resolve_desktop_dir()
-    if not _PDF_OUTPUT_FILE.exists():
-        return fallback_dir
-
-    data = json.loads(_PDF_OUTPUT_FILE.read_text("utf-8"))
-    if not isinstance(data, dict):
+    data = _load_pdf_output_settings()
+    if not data:
         return fallback_dir
 
     saved_dir = data.get("default_output_dir", "")
@@ -189,9 +218,34 @@ def save_default_output_dir(directory: str | Path) -> Path:
     if not resolved_dir.exists() or not resolved_dir.is_dir():
         raise ValueError(f"Output directory does not exist: {resolved_dir}")
 
-    _ensure_dir()
-    _PDF_OUTPUT_FILE.write_text(
-        json.dumps({"default_output_dir": str(resolved_dir)}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    settings = _load_pdf_output_settings()
+    settings["default_output_dir"] = str(resolved_dir)
+    _save_pdf_output_settings(settings)
     return resolved_dir
+
+
+def load_close_after_pdf_generation() -> bool:
+    """PDF 生成成功後にアプリを閉じる既定値を返す。
+
+    設定ファイルが古くこのキーを持っていない場合は、互換性維持のため False を返す。
+    これにより、既存ユーザーはアップデート後も従来どおり「生成後は閉じない」挙動になる。
+    """
+
+    data = _load_pdf_output_settings()
+    saved_value = data.get("close_after_pdf_generation", _DEFAULT_CLOSE_AFTER_PDF_GENERATION)
+    if isinstance(saved_value, bool):
+        return saved_value
+    return _DEFAULT_CLOSE_AFTER_PDF_GENERATION
+
+
+def save_close_after_pdf_generation(should_close: bool) -> bool:
+    """PDF 生成成功後にアプリを閉じる設定を保存する。
+
+    既存の保存先設定を保持したまま該当キーだけを更新するため、
+    先に現在の settings を読み直してから部分更新している。
+    """
+
+    settings = _load_pdf_output_settings()
+    settings["close_after_pdf_generation"] = should_close
+    _save_pdf_output_settings(settings)
+    return should_close

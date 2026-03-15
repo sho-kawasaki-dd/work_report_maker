@@ -10,9 +10,13 @@
 ## ReportWizard に残す責務
 
 - `QWizard` として各 page を生成し、画面遷移順を管理する。
+- Windows 既定の `AeroStyle` ではなくフッター型の wizard style を選び、`Back` / `Next` / `Cancel` の配置を一貫させる。
+- `Back` を 1 ページ目では非表示、2 ページ目以降では下部ボタン列へ表示する。
 - 表紙入力から `CoverDisplayInfo` / `OverviewDefaults` / `WorkContentDefaults` を組み立てる。
 - 完了時に cover / overview / photos を集約して最終 payload を構築する。
+- `Cancel` 押下とウィンドウ close の両方で、プロジェクト破棄確認と終了可否判定を集約する。
 - close 時に photo import / arrange の停止処理をまとめて呼び出す。
+- PDF 生成成功後に終了するかどうかを Step 1 の永続設定に従って分岐する。
 
 ## 各 page に残す責務
 

@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QShowEvent
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QWizard
 
 from work_report_maker.gui.pages.cover_form_page import CoverFormPage
@@ -74,6 +74,14 @@ class ReportWizard(QWizard):
         super().__init__(parent)
         self.setWindowTitle("報告書作成")
         self.setMinimumSize(640, 520)
+        # Windows の AeroStyle は Back を左上の小さな矢印として描画するため、
+        # 今回求められている「Next の左側に並ぶ Back」を安定して出すには、
+        # 下部のボタン列を使う ClassicStyle へ固定しておく必要がある。
+        self.setWizardStyle(QWizard.WizardStyle.ClassicStyle)
+        # reject() から super().reject() を呼ぶと closeEvent() も続けて発火する。
+        # そのままだと終了確認ダイアログが二重表示されるため、このフラグで
+        # 「reject 由来の closeEvent は素通しする」一回限りの経路を作る。
+        self._closing_via_reject = False
 
         # ウィザードページのインスタンスを作成
         self._project_page = ProjectNamePage()
@@ -98,6 +106,11 @@ class ReportWizard(QWizard):
         self.addPage(self._photo_import_page)
         self.addPage(self._photo_arrange_page)
         self.addPage(self._photo_description_page)
+        # ボタン文言と表示状態は wizard style の再構築時に上書きされることがあるため、
+        # currentIdChanged と初期反映の両方で同期しておく。
+        self.setButtonText(QWizard.WizardButton.BackButton, "Back")
+        self.currentIdChanged.connect(self._sync_navigation_buttons)
+        self._sync_navigation_buttons(self.currentId())
 
     def photo_description_defaults(self) -> PhotoDescriptionDefaults:
         """写真説明欄へ注入する既定値を返す。"""
@@ -198,24 +211,44 @@ class ReportWizard(QWizard):
         import_stopped = self._photo_import_page.cancel_active_import()
         return arrange_stopped and import_stopped
 
-    def closeEvent(self, event: QCloseEvent) -> None:
-        if self._pdf_generation_controller.is_running():
-            event.ignore()
-            QMessageBox.information(
-                self,
-                "PDF 生成中",
-                "報告書PDFを生成しています。中断または完了後に閉じてください。",
-            )
+    def reject(self) -> None:
+        """Cancel ボタン経由の終了要求を確認付きで処理する。
+
+        QWizard の Cancel は reject() を通るため、ここで確認ダイアログと
+        バックグラウンド処理の停止確認を一元化する。実際の window close は
+        super().reject() に任せ、closeEvent() 側では二重確認だけ回避する。
+        """
+
+        if not self._confirm_project_discard():
             return
-        if not self.stop_active_photo_operations():
+        if not self._can_close_wizard():
+            return
+
+        self._closing_via_reject = True
+        try:
+            super().reject()
+        finally:
+            self._closing_via_reject = False
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        # reject() 由来の closeEvent は、すでに確認とガードを通過済みなのでそのまま閉じる。
+        if self._closing_via_reject:
+            super().closeEvent(event)
+            return
+        # タイトルバーの閉じる操作でも Cancel と同じ UX に揃える。
+        if not self._confirm_project_discard():
             event.ignore()
-            QMessageBox.information(
-                self,
-                "画像処理を停止中",
-                "画像の読み込み処理を停止しています。数秒待ってから再度閉じてください。",
-            )
+            return
+        if not self._can_close_wizard():
+            event.ignore()
             return
         super().closeEvent(event)
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        # QWizard は show 後に内部ボタンを作り直すことがあるため、初回表示直後にも
+        # Back の可視状態と文言を再適用する。
+        self._sync_navigation_buttons(self.currentId())
 
     def accept(self) -> None:
         """ウィザード完了時の処理。
@@ -250,9 +283,12 @@ class ReportWizard(QWizard):
         return PDFGenerationController(self)
 
     def _handle_pdf_generation_success(self, output_path: Path) -> None:
+        # 成功後は一時ファイルを確実に掃除したうえで、終了するかどうかだけを
+        # Step 1 の永続設定へ委ねる。再生成ニーズがあるため、既定は閉じない。
         self._cleanup_photo_tmp_dir()
         QMessageBox.information(self, "PDF 生成完了", f"PDF を保存しました。\n{output_path}")
-        super().accept()
+        if self.field("close_after_pdf_generation") is True:
+            super().accept()
 
     def _handle_pdf_generation_error(self, message: str) -> None:
         QMessageBox.critical(self, "PDF 生成エラー", f"PDF の生成に失敗しました。\n{message}")
@@ -332,3 +368,60 @@ class ReportWizard(QWizard):
             return
         self._photo_tmp_dir.cleanup()
         self._photo_tmp_dir = None
+
+    def _sync_navigation_buttons(self, page_id: int) -> None:
+        """Back ボタンの文言と可視状態をページ位置に合わせて再同期する。
+
+        ClassicStyle でも Qt 側の再レイアウト時に文言や表示状態が既定値へ戻ることがある。
+        そのため page 遷移時と初回 show 時の両方でこのメソッドを通し、
+        1 ページ目では非表示、2 ページ目以降では Next の左側に表示する状態を保つ。
+        """
+
+        back_button = self.button(QWizard.WizardButton.BackButton)
+        if back_button is None:
+            return
+        # 日本語 UI でも、今回の要求ではラベルが明示的に "Back" / "Next" 指定なので固定する。
+        back_button.setText("Back")
+        is_visible = page_id > 0
+        back_button.setVisible(is_visible)
+        back_button.setEnabled(is_visible)
+
+    def _confirm_project_discard(self) -> bool:
+        """入力中プロジェクトを破棄して終了するか確認する。
+
+        ここでいう「プロジェクト破棄」は、未保存の GUI 入力状態を捨ててウィザードを閉じる意味で、
+        既存ファイルの削除までは行わない。Yes/No を返す純粋な確認関数として分離しておくことで、
+        Cancel ボタンとタイトルバー close の両方から同じ文言を再利用できる。
+        """
+
+        answer = QMessageBox.question(
+            self,
+            "終了確認",
+            "プロジェクトを破棄してアプリを終了しますか？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    def _can_close_wizard(self) -> bool:
+        """終了前にバックグラウンド処理の状態を確認する。
+
+        ユーザーが終了を了承しても、実際には PDF 生成中や画像 import 停止待ちの可能性がある。
+        その場合は終了を保留して理由だけを表示し、処理の整合性を優先する。
+        """
+
+        if self._pdf_generation_controller.is_running():
+            QMessageBox.information(
+                self,
+                "PDF 生成中",
+                "報告書PDFを生成しています。中断または完了後に閉じてください。",
+            )
+            return False
+        if not self.stop_active_photo_operations():
+            QMessageBox.information(
+                self,
+                "画像処理を停止中",
+                "画像の読み込み処理を停止しています。数秒待ってから再度閉じてください。",
+            )
+            return False
+        return True
