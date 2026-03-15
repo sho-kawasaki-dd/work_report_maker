@@ -54,6 +54,31 @@ def test_close_event_ignores_when_photo_operations_are_still_stopping(qtbot, mon
     ]
 
 
+def test_close_event_ignores_while_pdf_generation_is_running(qtbot, monkeypatch) -> None:
+    wizard = ReportWizard()
+    qtbot.addWidget(wizard)
+
+    monkeypatch.setattr(wizard._pdf_generation_controller, "is_running", lambda: True)
+
+    messages: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda parent, title, text: messages.append((title, text)),
+    )
+
+    event = QCloseEvent()
+    wizard.closeEvent(event)
+
+    assert event.isAccepted() is False
+    assert messages == [
+        (
+            "PDF 生成中",
+            "報告書PDFを生成しています。中断または完了後に閉じてください。",
+        )
+    ]
+
+
 def test_project_name_page_loads_default_output_directory(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
         "work_report_maker.gui.pages.project_name_page.load_default_output_dir",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from threading import Event
 from typing import Any, cast
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -359,7 +360,7 @@ def test_accept_generates_pdf_with_description_values(qtbot, tmp_path, monkeypat
         captured["output_path"] = output_path
         captured["optimize_pdf"] = optimize_pdf
 
-    monkeypatch.setattr("work_report_maker.gui.main_window.generate_full_report", _generate)
+    monkeypatch.setattr("work_report_maker.gui.report_generation_operation.generate_full_report", _generate)
     monkeypatch.setattr(
         "work_report_maker.gui.main_window.QWizard.accept",
         lambda self: accepted.append(True),
@@ -371,6 +372,7 @@ def test_accept_generates_pdf_with_description_values(qtbot, tmp_path, monkeypat
     )
 
     wizard.accept()
+    qtbot.waitUntil(lambda: accepted == [True])
     payload = cast(dict[str, Any], captured["report_data"])
 
     assert payload["title"] == "グリストラップ清掃完了報告書"
@@ -384,6 +386,69 @@ def test_accept_generates_pdf_with_description_values(qtbot, tmp_path, monkeypat
     assert captured["optimize_pdf"] is True
     assert accepted == [True]
     assert messages == [("PDF 生成完了", f"PDF を保存しました。\n{output_path}")]
+    assert wizard._photo_tmp_dir is None
+
+
+def test_accept_cancel_keeps_edit_state_and_skips_cleanup(qtbot, tmp_path, monkeypatch) -> None:
+    wizard = ReportWizard()
+    qtbot.addWidget(wizard)
+    wizard._project_page._name_edit.setText("京都三条ホテル")
+    wizard._cover_page._title_edit.setText("グリストラップ清掃")
+
+    photo = _make_photo_item(
+        "a.jpg",
+        site="京都三条ホテル",
+        work_date="2025年 3月 27日(木)",
+        location="1階厨房",
+        work_content="グリストラップ清掃",
+        remarks="異常なし",
+    )
+    wizard._photo_import_page.add_photo_items([photo])
+    wizard._photo_arrange_page.initializePage()
+
+    output_path = tmp_path / "exported.pdf"
+    generation_started = Event()
+    allow_finish = Event()
+    accepted: list[bool] = []
+    messages: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(
+        "work_report_maker.gui.main_window.QFileDialog.getSaveFileName",
+        lambda *args, **kwargs: (str(output_path), "PDF (*.pdf)"),
+    )
+
+    def _generate(*, report_data=None, json_path=None, output_path=None, optimize_pdf=True) -> None:
+        generation_started.set()
+        allow_finish.wait(2)
+
+    monkeypatch.setattr("work_report_maker.gui.report_generation_operation.generate_full_report", _generate)
+    monkeypatch.setattr(
+        "work_report_maker.gui.main_window.QWizard.accept",
+        lambda self: accepted.append(True),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda parent, title, text: messages.append((title, text)),
+    )
+
+    wizard.accept()
+
+    qtbot.waitUntil(generation_started.is_set)
+    qtbot.waitUntil(lambda: wizard._pdf_generation_controller.progress is not None)
+    wizard._pdf_generation_controller.request_cancel()
+    allow_finish.set()
+    qtbot.waitUntil(lambda: not wizard._pdf_generation_controller.is_running())
+
+    assert accepted == []
+    assert messages == [
+        (
+            "PDF 生成を中断しました",
+            "PDF の生成を中断しました。入力内容は保持されているため、そのまま再実行できます。",
+        )
+    ]
+    assert wizard._photo_tmp_dir is not None
+    assert photo.site == "京都三条ホテル"
 
 
 def test_accept_does_not_generate_pdf_when_save_dialog_is_cancelled(qtbot, monkeypatch) -> None:
@@ -391,17 +456,14 @@ def test_accept_does_not_generate_pdf_when_save_dialog_is_cancelled(qtbot, monke
     qtbot.addWidget(wizard)
     wizard._project_page._name_edit.setText("京都三条ホテル")
 
-    generated: list[bool] = []
+    started: list[bool] = []
     accepted: list[bool] = []
 
     monkeypatch.setattr(
         "work_report_maker.gui.main_window.QFileDialog.getSaveFileName",
         lambda *args, **kwargs: ("", ""),
     )
-    monkeypatch.setattr(
-        "work_report_maker.gui.main_window.generate_full_report",
-        lambda **kwargs: generated.append(True),
-    )
+    monkeypatch.setattr(wizard._pdf_generation_controller, "start", lambda **kwargs: started.append(True))
     monkeypatch.setattr(
         "work_report_maker.gui.main_window.QWizard.accept",
         lambda self: accepted.append(True),
@@ -409,5 +471,5 @@ def test_accept_does_not_generate_pdf_when_save_dialog_is_cancelled(qtbot, monke
 
     wizard.accept()
 
-    assert generated == []
+    assert started == []
     assert accepted == []

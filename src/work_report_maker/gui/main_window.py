@@ -28,6 +28,7 @@ from work_report_maker.gui.pages.photo_arrange_page import PhotoArrangePage
 from work_report_maker.gui.pages.photo_description_page import PhotoDescriptionPage
 from work_report_maker.gui.pages.photo_import_page import PhotoDescriptionDefaults, PhotoImportPage, PhotoItem
 from work_report_maker.gui.pages.project_name_page import ProjectNamePage
+from work_report_maker.gui.report_generation_operation import PDFGenerationController
 from work_report_maker.gui.pages.work_content_page import WorkContentPage
 from work_report_maker.gui.preset_manager import load_default_output_dir
 from work_report_maker.gui.report_build_helper import build_photos_payload, build_report_payload
@@ -39,7 +40,6 @@ from work_report_maker.gui.wizard_contexts import (
     WorkContentDefaults,
     load_company_lines,
 )
-from work_report_maker.services.pdf_generator import generate_full_report
 
 
 _INVALID_PDF_STEM_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -88,6 +88,7 @@ class ReportWizard(QWizard):
             photo_arrange_page=self._photo_arrange_page,
         )
         self._photo_tmp_dir = None
+        self._pdf_generation_controller = self._create_pdf_generation_controller()
 
         # ページ順に追加（QWizard が自動的に「次へ」「戻る」「完了」ボタンを管理）
         self.addPage(self._project_page)
@@ -198,6 +199,14 @@ class ReportWizard(QWizard):
         return arrange_stopped and import_stopped
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self._pdf_generation_controller.is_running():
+            event.ignore()
+            QMessageBox.information(
+                self,
+                "PDF 生成中",
+                "報告書PDFを生成しています。中断または完了後に閉じてください。",
+            )
+            return
         if not self.stop_active_photo_operations():
             event.ignore()
             QMessageBox.information(
@@ -213,30 +222,54 @@ class ReportWizard(QWizard):
 
         保存ダイアログで出力先を確定し、共通の PDF 生成サービスへ入力を渡す。
 
-        生成失敗時でも photo 用の一時ディレクトリだけは確実に回収し、ウィザード自体は閉じない。
-        これにより、ユーザーは保存先修正や再実行をその場でやり直せる。
+        PDF 生成はバックグラウンドで実行し、成功時だけ一時ディレクトリを回収する。
+        失敗時や中断時は編集状態を保持したまま再実行できるよう、ウィザード自体は閉じない。
         """
+        if self._pdf_generation_controller.is_running():
+            return
+
         output_path = self._choose_output_path()
         if output_path is None:
             return
 
         try:
             result = self._build_report_payload()
-            generate_full_report(report_data=result, output_path=output_path)
         except Exception as exc:
             QMessageBox.critical(self, "PDF 生成エラー", f"PDF の生成に失敗しました。\n{exc}")
             return
-        finally:
-            self._cleanup_photo_tmp_dir()
 
+        self._pdf_generation_controller.start(
+            report_data=result,
+            output_path=output_path,
+            on_success=lambda: self._handle_pdf_generation_success(output_path),
+            on_error=self._handle_pdf_generation_error,
+            on_cancelled=self._handle_pdf_generation_cancelled,
+        )
+
+    def _create_pdf_generation_controller(self) -> PDFGenerationController:
+        return PDFGenerationController(self)
+
+    def _handle_pdf_generation_success(self, output_path: Path) -> None:
+        self._cleanup_photo_tmp_dir()
         QMessageBox.information(self, "PDF 生成完了", f"PDF を保存しました。\n{output_path}")
         super().accept()
+
+    def _handle_pdf_generation_error(self, message: str) -> None:
+        QMessageBox.critical(self, "PDF 生成エラー", f"PDF の生成に失敗しました。\n{message}")
+
+    def _handle_pdf_generation_cancelled(self) -> None:
+        QMessageBox.information(
+            self,
+            "PDF 生成を中断しました",
+            "PDF の生成を中断しました。入力内容は保持されているため、そのまま再実行できます。",
+        )
 
     def _build_report_payload(self) -> dict:
         """各 page の入力値を raw report 互換 payload へ束ねる。"""
 
         # build_report_payload() は photos 用の TemporaryDirectory も返すため、wizard 側では
         # その所有権だけ保持し、schema 組み立ての詳細には立ち入らない。
+        self._cleanup_photo_tmp_dir()
         build_result = build_report_payload(
             project_name=self.field("project_name"),
             cover=self.collect_cover_data(),
