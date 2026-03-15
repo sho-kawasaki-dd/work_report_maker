@@ -326,10 +326,50 @@ class PhotoDescriptionPage(QWizardPage):
 
         return cast(ReportWizard, self.wizard())
 
+    def _sync_imported_photo_defaults(self) -> None:
+        wizard = self.wizard()
+        syncer = getattr(wizard, "sync_imported_photo_defaults", None)
+        if callable(syncer):
+            syncer()
+            return
+        import_page = getattr(wizard, "_photo_import_page", None)
+        if import_page is not None:
+            import_page.sync_photo_item_defaults()
+
+    def _arranged_photo_items(self) -> list[PhotoItem]:
+        wizard = self.wizard()
+        getter = getattr(wizard, "arranged_photo_items", None)
+        if callable(getter):
+            return getter()
+        arrange_page = getattr(wizard, "_photo_arrange_page", None)
+        if arrange_page is None:
+            return []
+        return arrange_page.collect_photo_items()
+
+    def _move_arranged_photo_left(self, photo: PhotoItem) -> int | None:
+        wizard = self.wizard()
+        mover = getattr(wizard, "move_arranged_photo_left", None)
+        if callable(mover):
+            return mover(photo)
+        arrange_page = getattr(wizard, "_photo_arrange_page", None)
+        if arrange_page is None:
+            return None
+        return arrange_page.move_photo_item_left(photo)
+
+    def _move_arranged_photo_right(self, photo: PhotoItem) -> int | None:
+        wizard = self.wizard()
+        mover = getattr(wizard, "move_arranged_photo_right", None)
+        if callable(mover):
+            return mover(photo)
+        arrange_page = getattr(wizard, "_photo_arrange_page", None)
+        if arrange_page is None:
+            return None
+        return arrange_page.move_photo_item_right(photo)
+
     def initializePage(self) -> None:
         """PhotoArrangePage の現在順を取り込み、表示対象を同期する。"""
-        self._wizard()._photo_import_page.sync_photo_item_defaults()
-        self._photo_items = list(self._wizard()._photo_arrange_page.collect_photo_items())
+        self._sync_imported_photo_defaults()
+        self._photo_items = list(self._arranged_photo_items())
         self._current_photo_key = resolve_current_photo_key(
             self._photo_items,
             self._current_photo_key,
@@ -485,11 +525,10 @@ class PhotoDescriptionPage(QWizardPage):
         if target is None:
             return
 
-        arrange_page = self._wizard()._photo_arrange_page
-        if arrange_page.move_photo_item_left(target) is None:
+        if self._move_arranged_photo_left(target) is None:
             return
 
-        self._photo_items = list(arrange_page.collect_photo_items())
+        self._photo_items = list(self._arranged_photo_items())
         self._current_photo_key = self._photo_key(target)
         self._focused_photo_key = self._photo_key(target)
         self._refresh_display()
@@ -503,11 +542,10 @@ class PhotoDescriptionPage(QWizardPage):
         if target is None:
             return
 
-        arrange_page = self._wizard()._photo_arrange_page
-        if arrange_page.move_photo_item_right(target) is None:
+        if self._move_arranged_photo_right(target) is None:
             return
 
-        self._photo_items = list(arrange_page.collect_photo_items())
+        self._photo_items = list(self._arranged_photo_items())
         self._current_photo_key = self._photo_key(target)
         self._focused_photo_key = self._photo_key(target)
         self._refresh_display()

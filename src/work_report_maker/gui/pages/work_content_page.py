@@ -256,8 +256,7 @@ class WorkContentPage(QWizardPage):
 
     def initializePage(self) -> None:
         """表紙の工事・作業名を先頭グループの title に反映する。"""
-        cover = self._wizard()._cover_page
-        self._first_group_title_label.setText(cover.title_text())
+        self._first_group_title_label.setText(self._wizard().cover_info().title_text)
 
     # ── グループ操作 ──────────────────────────────────────
 
@@ -271,13 +270,13 @@ class WorkContentPage(QWizardPage):
 
     def collect_work_groups(self) -> list[dict]:
         """先頭固定グループ + 追加グループをフラット展開して返す。"""
-        cover = self._wizard()._cover_page
+        cover = self._wizard().cover_info()
 
         raw_lines = self._first_group_lines.toPlainText().split("\n")
         groups: list[dict] = [
             {
                 "marker": _FIRST_MARKER,
-                "title": cover.title_text(),
+                "title": cover.title_text,
                 "lines": [ln for ln in raw_lines if ln.strip()],
             }
         ]

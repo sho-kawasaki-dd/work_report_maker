@@ -214,6 +214,51 @@ class PhotoArrangePage(QWizardPage):
 
         return cast(ReportWizard, self.wizard())
 
+    def _imported_photo_items(self) -> list[PhotoItem]:
+        wizard = self.wizard()
+        getter = getattr(wizard, "imported_photo_items", None)
+        if callable(getter):
+            return getter()
+        import_page = getattr(wizard, "_photo_import_page", None)
+        return list(getattr(import_page, "photo_items", []))
+
+    def _photo_import_settings(self):
+        wizard = self.wizard()
+        getter = getattr(wizard, "photo_import_settings", None)
+        if callable(getter):
+            return getter()
+        import_page = getattr(wizard, "_photo_import_page", None)
+        if import_page is None:
+            raise AttributeError("Photo import page is not available")
+
+        class _Settings:
+            def __init__(self, page) -> None:
+                self.dpi = page.dpi()
+                self.jpeg_quality = page.jpeg_quality()
+                self.png_quality_max = page.png_quality_max()
+
+        return _Settings(import_page)
+
+    def _add_imported_photo_items(self, items: list[PhotoItem]) -> None:
+        wizard = self.wizard()
+        adder = getattr(wizard, "add_imported_photo_items", None)
+        if callable(adder):
+            adder(items)
+            return
+        import_page = getattr(wizard, "_photo_import_page", None)
+        if import_page is not None:
+            import_page.add_photo_items(items)
+
+    def _remove_imported_photo_items(self, items: list[PhotoItem]) -> None:
+        wizard = self.wizard()
+        remover = getattr(wizard, "remove_imported_photo_items", None)
+        if callable(remover):
+            remover(items)
+            return
+        import_page = getattr(wizard, "_photo_import_page", None)
+        if import_page is not None:
+            import_page.remove_photo_items(items)
+
     # ── ページ初期化 ──────────────────────────────────────
 
     def initializePage(self) -> None:
@@ -224,8 +269,7 @@ class PhotoArrangePage(QWizardPage):
 
         # Arrange ページは PhotoImportPage をデータソースとして参照する。ここで毎回
         # import 側の状態を取り込みつつ、Arrange 側での並び替え結果はできるだけ残す。
-        import_page = self._wizard()._photo_import_page
-        import_items = import_page.photo_items
+        import_items = self._imported_photo_items()
         import_keys = {self._photo_key(photo): photo for photo in import_items}
 
         if self._initialized:
@@ -530,14 +574,14 @@ class PhotoArrangePage(QWizardPage):
         insert_pos = (rows[0] + 1) if rows else self._model.rowCount()
 
         # 圧縮設定は PhotoImportPage から参照
-        import_page = self._wizard()._photo_import_page
+        import_settings = self._photo_import_settings()
 
         # Step 5 と同じワーカーを再利用し、圧縮パラメータも import 側の現在値に揃える。
         worker = _ImportWorker(
             all_paths,
-            dpi=import_page.dpi(),
-            jpeg_quality=import_page.jpeg_quality(),
-            png_quality_max=import_page.png_quality_max(),
+            dpi=import_settings.dpi,
+            jpeg_quality=import_settings.jpeg_quality,
+            png_quality_max=import_settings.png_quality_max,
         )
 
         thread = QThread(self)
@@ -556,7 +600,7 @@ class PhotoArrangePage(QWizardPage):
         self._add_thread = thread
         self._add_worker = worker
         self._add_progress = progress
-        self._add_import_page = import_page
+        self._add_import_page = True
         self._add_insert_pos = insert_pos
 
         worker.progress.connect(progress.setValue, Qt.ConnectionType.QueuedConnection)
@@ -571,8 +615,7 @@ class PhotoArrangePage(QWizardPage):
 
     def _on_add_items_ready(self, items: list[PhotoItem]) -> None:
         # ワーカーからバッチ単位で追加アイテムが届く。到着順を保ってモデルへ挿入する。
-        import_page = self._add_import_page
-        if import_page is None:
+        if self._add_import_page is None:
             return
 
         # 連続挿入中のちらつきを抑えるため、一時的に view 更新を止める。
@@ -590,7 +633,7 @@ class PhotoArrangePage(QWizardPage):
             self._view.setUpdatesEnabled(True)
 
         # 実データ本体も import 側へ反映し、ページ間で同じ写真集合を共有する。
-        import_page.add_photo_items(items)
+        self._add_imported_photo_items(items)
         self._update_info_label()
 
     def _cancel_add_photos(self) -> None:
@@ -672,14 +715,13 @@ class PhotoArrangePage(QWizardPage):
             return
 
         # PhotoImportPage のリストからも除去
-        import_page = self._wizard()._photo_import_page
         items_to_remove: list[PhotoItem] = []
         for row in rows:
             photo = self._photo_for_row(row)
             if photo is not None:
                 items_to_remove.append(photo)
 
-        import_page.remove_photo_items(items_to_remove)
+        self._remove_imported_photo_items(items_to_remove)
 
         # 実体辞書とアイコンキャッシュからも忘れさせておく。
         for photo in items_to_remove:

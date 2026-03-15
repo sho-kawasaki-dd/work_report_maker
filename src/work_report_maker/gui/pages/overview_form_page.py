@@ -103,19 +103,19 @@ class OverviewFormPage(QWizardPage):
         QWizard が「次へ」で本ページへ遷移するたびに呼ばれるため、
         ユーザーが Step 2 へ戻って値を変更した場合も追従する。
         """
-        cover = self._wizard()._cover_page
+        cover = self._wizard().cover_info()
         self._lbl_target.setText(self.default_photo_site())
         self._lbl_location.setText(self.default_photo_location())
-        self._lbl_content.setText(cover.title_text())
-        self._lbl_date.setText(cover.format_work_date())
+        self._lbl_content.setText(cover.title_text)
+        self._lbl_date.setText(cover.work_date_text)
 
     def default_photo_site(self) -> str:
         """写真説明の「現場」に使う既定値を返す。"""
-        return self._wizard()._cover_page.building_name()
+        return self._wizard().default_photo_site()
 
     def default_photo_location(self) -> str:
         """写真説明の「施工箇所」に使う既定値を返す。"""
-        return self._wizard()._cover_page.subtitle()
+        return self._wizard().default_photo_location()
 
     # ── データ収集 ────────────────────────────────────────
 
@@ -141,7 +141,7 @@ class OverviewFormPage(QWizardPage):
 
     def _build_info_rows(self) -> list[dict]:
         """info_rows を組み立てる。表紙流用 4 項目 + 施工担当。"""
-        cover = self._wizard()._cover_page
+        cover = self._wizard().cover_info()
 
         # 施工担当: 現場責任者 → value, 現場作業者 → extra_values
         manager = self._manager_edit.text().strip()
@@ -154,8 +154,8 @@ class OverviewFormPage(QWizardPage):
         return [
             {"number": "1", "label": "施工対象・名称", "value": self.default_photo_site(), "extra_values": []},
             {"number": "2", "label": "施工場所", "value": self.default_photo_location(), "extra_values": []},
-            {"number": "3", "label": "施工内容", "value": cover.title_text(), "extra_values": []},
-            {"number": "4", "label": "施工日時", "value": cover.format_work_date(), "extra_values": []},
+            {"number": "3", "label": "施工内容", "value": cover.title_text, "extra_values": []},
+            {"number": "4", "label": "施工日時", "value": cover.work_date_text, "extra_values": []},
             {"number": "5", "label": "施工担当", "value": staff_value, "extra_values": staff_extra},
         ]
 
@@ -164,8 +164,8 @@ class OverviewFormPage(QWizardPage):
 
         戻り値の構造は data/raw_report.json の "overview" キーと同じ形式。
         """
-        cover = self._wizard()._cover_page
-        recipient = cover.recipient_text()
+        cover = self._wizard().cover_info()
+        recipient = cover.recipient_text
         if recipient:
             recipient += "　御中"
 
@@ -175,7 +175,7 @@ class OverviewFormPage(QWizardPage):
             "company_lines": self._build_company_lines(),
             "info_rows": self._build_info_rows(),
             "work_section_title": _WORK_SECTION_TITLE,
-            "work_groups": self._wizard()._work_content_page.collect_work_groups(),
+            "work_groups": self._wizard().collect_work_groups(),
             "blank_line_count": _BLANK_LINE_COUNT,
             "note_line": _NOTE_LINE,
             "ending": _ENDING,
