@@ -75,11 +75,18 @@ def build_report_payload(
     overview: dict,
     photo_items: Sequence[PhotoItem],
 ) -> ReportBuildResult:
-    """ReportWizard が出力する raw payload を組み立てる。"""
+    """ReportWizard が出力する raw payload を組み立てる。
+
+    GUI 側ではプロジェクト名も保持しているが、PDF 生成の共通バックエンドが期待する raw report
+    契約では最上位 `title` が必須である。したがってここでは cover.title を正とし、未入力時だけ
+    project_name を fallback として補う。
+    """
 
     built_photos = build_photos_payload(photo_items)
+    report_title = str(cover.get("title") or project_name or "")
     return ReportBuildResult(
         payload={
+            "title": report_title,
             "project_name": project_name,
             "cover": cover,
             "overview": overview,

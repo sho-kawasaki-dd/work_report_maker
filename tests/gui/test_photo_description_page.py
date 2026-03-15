@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from typing import Any, cast
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -329,6 +330,7 @@ def test_accept_generates_pdf_with_description_values(qtbot, tmp_path, monkeypat
     wizard = ReportWizard()
     qtbot.addWidget(wizard)
     wizard._project_page._name_edit.setText("京都三条ホテル")
+    wizard._cover_page._title_edit.setText("グリストラップ清掃")
 
     photo = _make_photo_item(
         "a.jpg",
@@ -369,8 +371,9 @@ def test_accept_generates_pdf_with_description_values(qtbot, tmp_path, monkeypat
     )
 
     wizard.accept()
-    payload = captured["report_data"]
+    payload = cast(dict[str, Any], captured["report_data"])
 
+    assert payload["title"] == "グリストラップ清掃完了報告書"
     assert len(payload["photos"]) == 1
     assert payload["photos"][0]["site"] == "京都三条ホテル"
     assert payload["photos"][0]["work_date"] == "2025年 3月 27日(木)"
