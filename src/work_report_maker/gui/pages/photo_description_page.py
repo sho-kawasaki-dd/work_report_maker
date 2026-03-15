@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import QDate, QEvent, QObject, Qt, Signal
@@ -25,39 +24,20 @@ from PySide6.QtWidgets import (
     QWizardPage,
 )
 
+from work_report_maker.gui.pages.photo_description_dates import format_work_date, parse_work_date
+from work_report_maker.gui.pages.photo_description_focus import is_active_photo_key, resolve_focused_photo_key
+from work_report_maker.gui.pages.photo_description_navigation import (
+    layout_positions,
+    move_button_states,
+    photo_index_for_key,
+    resolve_current_photo_key,
+    shifted_photo_key,
+    visible_range,
+)
 from work_report_maker.gui.pages.photo_import_page import PhotoItem
 
 if TYPE_CHECKING:
     from work_report_maker.gui.main_window import ReportWizard
-
-
-_WORK_DATE_PATTERN = re.compile(r"^(?P<year>\d{4})年\s*(?P<month>\d{1,2})月\s*(?P<day>\d{1,2})日(?:\([^)]*\))?$")
-_WEEKDAY_MAP: dict[int, str] = {
-    1: "月",
-    2: "火",
-    3: "水",
-    4: "木",
-    5: "金",
-    6: "土",
-    7: "日",
-}
-
-
-def _parse_work_date(value: str) -> QDate | None:
-    match = _WORK_DATE_PATTERN.match(value.strip())
-    if match is None:
-        return None
-    date = QDate(
-        int(match.group("year")),
-        int(match.group("month")),
-        int(match.group("day")),
-    )
-    return date if date.isValid() else None
-
-
-def _format_work_date(date: QDate) -> str:
-    weekday = _WEEKDAY_MAP.get(date.dayOfWeek(), "")
-    return f"{date.year()}年 {date.month()}月 {date.day():02d}日({weekday})"
 
 
 class _PhotoDescriptionEditor(QGroupBox):
@@ -211,7 +191,7 @@ class _PhotoDescriptionEditor(QGroupBox):
 
     def _set_date_edit_value(self, edit: QDateEdit, value: str) -> None:
         edit.blockSignals(True)
-        parsed = _parse_work_date(value)
+        parsed = parse_work_date(value)
         edit.setDate(parsed or QDate.currentDate())
         edit.blockSignals(False)
 
@@ -226,7 +206,7 @@ class _PhotoDescriptionEditor(QGroupBox):
 
     def _on_work_date_changed(self, value: QDate) -> None:
         if self._photo is not None:
-            self._photo.set_description_field("work_date", _format_work_date(value))
+            self._photo.set_description_field("work_date", format_work_date(value))
 
     def _on_location_changed(self, value: str) -> None:
         if self._photo is not None:
@@ -349,44 +329,27 @@ class PhotoDescriptionPage(QWizardPage):
     def initializePage(self) -> None:
         """PhotoArrangePage の現在順を取り込み、表示対象を同期する。"""
         self._wizard()._photo_import_page.sync_photo_item_defaults()
-        arranged_items = self._wizard()._photo_arrange_page.collect_photo_items()
-        previous_key = self._current_photo_key
-        self._photo_items = list(arranged_items)
-
-        if not self._photo_items:
-            self._current_photo_key = None
+        self._photo_items = list(self._wizard()._photo_arrange_page.collect_photo_items())
+        self._current_photo_key = resolve_current_photo_key(
+            self._photo_items,
+            self._current_photo_key,
+            self._photo_key,
+        )
+        if self._current_photo_key is None:
             self._focused_photo_key = None
-            self._refresh_display()
-            return
-
-        if previous_key is not None:
-            for item in self._photo_items:
-                if self._photo_key(item) == previous_key:
-                    self._current_photo_key = previous_key
-                    self._refresh_display()
-                    return
-
-        self._current_photo_key = self._photo_key(self._photo_items[0])
         self._refresh_display()
 
     def current_photo(self) -> PhotoItem | None:
         """現在表示中の PhotoItem を返す。"""
-        if self._current_photo_key is None:
+        current_index = photo_index_for_key(self._photo_items, self._current_photo_key, self._photo_key)
+        if current_index is None:
             return None
-        for item in self._photo_items:
-            if self._photo_key(item) == self._current_photo_key:
-                return item
-        return None
+        return self._photo_items[current_index]
 
     def current_photo_no(self) -> int | None:
         """現在表示中の写真 No を返す。"""
-        current = self.current_photo()
-        if current is None:
-            return None
-        for index, item in enumerate(self._photo_items, start=1):
-            if item is current:
-                return index
-        return None
+        current_index = photo_index_for_key(self._photo_items, self._current_photo_key, self._photo_key)
+        return None if current_index is None else current_index + 1
 
     def photo_count(self) -> int:
         """現在の写真件数を返す。"""
@@ -394,11 +357,10 @@ class PhotoDescriptionPage(QWizardPage):
 
     def visible_photo_items(self) -> list[PhotoItem]:
         """現在の表示モードで見えている PhotoItem 群を返す。"""
-        current = self.current_photo()
-        if current is None:
+        current_index = photo_index_for_key(self._photo_items, self._current_photo_key, self._photo_key)
+        start_index, end_index = visible_range(len(self._photo_items), current_index, self._view_mode)
+        if start_index == end_index:
             return []
-        start_index = self._photo_items.index(current)
-        end_index = min(start_index + self._view_mode, len(self._photo_items))
         return self._photo_items[start_index:end_index]
 
     def set_view_mode(self, mode: int) -> None:
@@ -413,12 +375,10 @@ class PhotoDescriptionPage(QWizardPage):
         return id(photo)
 
     def focused_photo(self) -> PhotoItem | None:
-        if self._focused_photo_key is None:
+        focused_index = photo_index_for_key(self._photo_items, self._focused_photo_key, self._photo_key)
+        if focused_index is None:
             return None
-        for item in self._photo_items:
-            if self._photo_key(item) == self._focused_photo_key:
-                return item
-        return None
+        return self._photo_items[focused_index]
 
     def _find_editor_for_photo_key(self, photo_key: int | None) -> _PhotoDescriptionEditor | None:
         if photo_key is None:
@@ -430,15 +390,21 @@ class PhotoDescriptionPage(QWizardPage):
         return None
 
     def _sync_focused_photo(self) -> None:
-        focused = self.focused_photo()
-        if focused is None or focused not in self.visible_photo_items():
-            current = self.current_photo()
-            self._focused_photo_key = self._photo_key(current) if current is not None else None
+        visible_keys = [self._photo_key(photo) for photo in self.visible_photo_items()]
+        self._focused_photo_key = resolve_focused_photo_key(
+            visible_keys,
+            self._focused_photo_key,
+            self._current_photo_key,
+        )
 
         for editor in self._editor_widgets:
             photo = editor.bound_photo()
-            is_active = photo is not None and self._focused_photo_key == self._photo_key(photo)
-            editor.set_active(is_active)
+            editor.set_active(
+                is_active_photo_key(
+                    self._photo_key(photo) if photo is not None else None,
+                    self._focused_photo_key,
+                )
+            )
 
     def _on_editor_focus_received(self, editor: _PhotoDescriptionEditor) -> None:
         photo = editor.bound_photo()
@@ -446,19 +412,18 @@ class PhotoDescriptionPage(QWizardPage):
             return
         self._focused_photo_key = self._photo_key(photo)
         self._sync_focused_photo()
-        self._update_navigation_buttons(self.current_photo_no() - 1 if self.current_photo_no() else None, len(self._photo_items))
+        self._update_navigation_buttons()
 
     def _refresh_display(self) -> None:
-        current = self.current_photo()
         total = len(self._photo_items)
         current_no = self.current_photo_no()
 
-        if current is None or current_no is None:
+        if current_no is None:
             self._position_label.setText(f"現在位置: 0 / {total}")
             for editor in self._editor_widgets:
                 editor.clear()
             self._relayout_visible_editors(0)
-            self._update_navigation_buttons(None, total)
+            self._update_navigation_buttons()
             return
 
         visible_items = self.visible_photo_items()
@@ -473,55 +438,46 @@ class PhotoDescriptionPage(QWizardPage):
 
         self._sync_focused_photo()
         self._relayout_visible_editors(len(visible_items))
-        self._update_navigation_buttons(current_no - 1, total)
+        self._update_navigation_buttons()
 
     def _relayout_visible_editors(self, visible_count: int) -> None:
         while self._editors_layout.count():
             self._editors_layout.takeAt(0)
 
-        if visible_count == 1:
-            self._editors_layout.addWidget(self._editor_widgets[0], 0, 0, 1, 2)
-            return
+        for index, row, col, row_span, col_span in layout_positions(visible_count):
+            self._editors_layout.addWidget(self._editor_widgets[index], row, col, row_span, col_span)
 
-        for index in range(visible_count):
-            row = index // 2
-            col = index % 2
-            self._editors_layout.addWidget(self._editor_widgets[index], row, col)
-
-    def _update_navigation_buttons(self, current_index: int | None, total: int) -> None:
-        has_previous = current_index is not None and current_index > 0
-        has_next = current_index is not None and current_index < total - 1
-        self._btn_previous.setEnabled(has_previous)
-        self._btn_next.setEnabled(has_next)
+    def _update_navigation_buttons(self) -> None:
+        total = len(self._photo_items)
+        current_index = photo_index_for_key(self._photo_items, self._current_photo_key, self._photo_key)
 
         focused = self.focused_photo() or self.current_photo()
-        if focused is None:
-            self._btn_move_previous.setEnabled(False)
-            self._btn_move_next.setEnabled(False)
-            return
+        focused_index = None
+        if focused is not None:
+            focused_index = photo_index_for_key(self._photo_items, self._photo_key(focused), self._photo_key)
 
-        focused_index = self._photo_items.index(focused)
-        self._btn_move_previous.setEnabled(focused_index > 0)
-        self._btn_move_next.setEnabled(focused_index < total - 1)
+        has_previous, has_next, can_move_previous, can_move_next = move_button_states(
+            total,
+            current_index,
+            focused_index,
+        )
+        self._btn_previous.setEnabled(has_previous)
+        self._btn_next.setEnabled(has_next)
+        self._btn_move_previous.setEnabled(can_move_previous)
+        self._btn_move_next.setEnabled(can_move_next)
 
     def _show_previous_photo(self) -> None:
-        current = self.current_photo()
-        if current is None:
+        previous_key = shifted_photo_key(self._photo_items, self._current_photo_key, -1, self._photo_key)
+        if previous_key is None:
             return
-        current_index = self._photo_items.index(current)
-        if current_index <= 0:
-            return
-        self._current_photo_key = self._photo_key(self._photo_items[current_index - 1])
+        self._current_photo_key = previous_key
         self._refresh_display()
 
     def _show_next_photo(self) -> None:
-        current = self.current_photo()
-        if current is None:
+        next_key = shifted_photo_key(self._photo_items, self._current_photo_key, 1, self._photo_key)
+        if next_key is None:
             return
-        current_index = self._photo_items.index(current)
-        if current_index >= len(self._photo_items) - 1:
-            return
-        self._current_photo_key = self._photo_key(self._photo_items[current_index + 1])
+        self._current_photo_key = next_key
         self._refresh_display()
 
     def _move_current_photo_left(self) -> None:
