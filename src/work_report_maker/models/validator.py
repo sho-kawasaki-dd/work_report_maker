@@ -1,21 +1,33 @@
+"""raw report / render-ready report の構造検証を行う。"""
+
 from __future__ import annotations
 
 from typing import Any
 
 
 def require_mapping(name: str, value: Any) -> dict[str, Any]:
+    """値が JSON object 相当であることを検証する。"""
+
     if not isinstance(value, dict):
         raise TypeError(f"{name} must be a JSON object.")
     return value
 
 
 def require_list(name: str, value: Any) -> list[Any]:
+    """値が JSON array 相当であることを検証する。"""
+
     if not isinstance(value, list):
         raise TypeError(f"{name} must be a JSON array.")
     return value
 
 
 def validate_report_data(report_data: dict[str, Any]) -> None:
+    """render-ready report の最低限の構造を検証する。
+
+    ここで保証するのはキーの存在と object/array の形だけであり、業務上の妥当性や文字数制限までは
+    判定しない。そうした意味づけは adapter や template 側の責務とする。
+    """
+
     required_top_level_keys = ["title", "cover", "overview", "photo_layout", "photo_pages"]
     missing_keys = [key for key in required_top_level_keys if key not in report_data]
     if missing_keys:
@@ -62,6 +74,8 @@ def validate_report_data(report_data: dict[str, Any]) -> None:
 
 
 def validate_raw_report_data(raw_report: dict[str, Any]) -> None:
+    """raw report の最低限の構造を検証する。"""
+
     required_top_level_keys = ["title", "cover", "overview", "photos"]
     missing_keys = [key for key in required_top_level_keys if key not in raw_report]
     if missing_keys:

@@ -1,3 +1,10 @@
+"""PhotoArrangePage 向けの入力専用 view / delegate。
+
+このモジュールは「入力イベントをどう解釈するか」に責務を限定し、実際の並び替えや削除は
+page 側へ signal で委譲する。view 自体が model を直接組み替えないことで、PhotoItem 実体と
+表示行の同期責務を page 側に一元化している。
+"""
+
 from __future__ import annotations
 
 from PySide6.QtCore import QMimeData, QModelIndex, QPersistentModelIndex, Qt, Signal
@@ -6,6 +13,8 @@ from PySide6.QtWidgets import QListView, QStyleOptionViewItem, QStyledItemDelega
 
 
 class PageBorderDelegate(QStyledItemDelegate):
+    """3 枚ごとの PDF ページ境界を一覧上に可視化する delegate。"""
+
     def __init__(self, photos_per_page: int, parent=None) -> None:
         super().__init__(parent)
         self._photos_per_page = photos_per_page
@@ -42,6 +51,8 @@ class PageBorderDelegate(QStyledItemDelegate):
 
 
 class PhotoArrangeListView(QListView):
+    """Arrange 用のキーボード操作と内部 D&D を signal 化する QListView。"""
+
     internal_drop_requested = Signal(int)
     delete_requested = Signal()
     move_single_left_requested = Signal()
@@ -61,6 +72,8 @@ class PhotoArrangeListView(QListView):
 
         drag = QDrag(self)
         mime_data = QMimeData()
+        # event.source() だけに頼ると外部 drag と識別しづらいケースがあるため、独自 MIME type を
+        # 付けて「自分が開始した並べ替え drag」であることを明示する。
         mime_data.setData("application/x-work-report-maker-photo-arrange", b"move")
         drag.setMimeData(mime_data)
 
@@ -122,6 +135,8 @@ class PhotoArrangeListView(QListView):
         )
 
     def _drop_row_for_event(self, event: QDropEvent) -> int:
+        """ドロップ位置から「選択ブロックを挿入すべき row」を算出する。"""
+
         pos = event.position().toPoint()
         index = self.indexAt(pos)
         model = self.model()

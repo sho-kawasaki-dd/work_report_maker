@@ -12,27 +12,10 @@ from PySide6.QtWidgets import QMessageBox, QWizard
 from work_report_maker.gui.main_window import ReportWizard
 from work_report_maker.gui.pages.photo_arrange_page import PhotoArrangePage
 from work_report_maker.gui.pages.photo_import_page import PhotoDescriptionDefaults, PhotoImportPage, PhotoItem
+from tests.gui.wizard_stubs import create_arrange_wizard, create_import_wizard, make_photo_item
 
 
-def _make_photo_item(name: str) -> PhotoItem:
-    image = QImage(240, 180, QImage.Format.Format_RGB32)
-    image.fill(Qt.GlobalColor.blue)
-    encoded = QByteArray()
-    buffer = QBuffer(encoded)
-    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-    image.save(buffer, "PNG")
-    buffer.close()
-    return PhotoItem(
-        filename=name,
-        data=bytes(encoded),
-        format="png",
-        thumbnail=image.scaled(
-            128,
-            128,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        ),
-    )
+_make_photo_item = make_photo_item
 
 
 def _photo_names(page: PhotoArrangePage) -> list[str]:
@@ -44,18 +27,7 @@ def _item_labels(page: PhotoArrangePage) -> list[str]:
 
 
 def _create_page(photo_names: list[str], qtbot) -> tuple[QWizard, PhotoImportPage, PhotoArrangePage]:
-    wizard = QWizard()
-    import_page = PhotoImportPage()
-    import_page.add_photo_items([_make_photo_item(name) for name in photo_names])
-    arrange_page = PhotoArrangePage()
-
-    wizard._photo_import_page = import_page
-    wizard.addPage(import_page)
-    wizard.addPage(arrange_page)
-    qtbot.addWidget(wizard)
-
-    arrange_page.initializePage()
-    return wizard, import_page, arrange_page
+    return create_arrange_wizard(photo_names, qtbot=qtbot)
 
 
 def test_model_user_role_stores_picklable_key(qtbot) -> None:
@@ -274,17 +246,16 @@ def test_photo_item_syncs_unedited_default_fields_only() -> None:
 
 
 def test_import_page_applies_wizard_photo_description_defaults(qtbot) -> None:
-    wizard = QWizard()
-    import_page = PhotoImportPage()
-    wizard.addPage(import_page)
-    wizard.photo_description_defaults = lambda: PhotoDescriptionDefaults(
+    wizard, import_page = create_import_wizard(
+        qtbot=qtbot,
+        defaults=PhotoDescriptionDefaults(
         site="現場A",
         work_date="2025年 3月 27日(木)",
         location="1階厨房",
+        ),
     )
-    qtbot.addWidget(wizard)
 
-    item = _make_photo_item("a.jpg")
+    item = make_photo_item("a.jpg")
     import_page.add_photo_items([item])
 
     assert item.site == "現場A"

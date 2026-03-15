@@ -55,6 +55,7 @@ def load_building_presets() -> dict[str, dict[str, str]]:
         {建物名: {"recipient": 提出先名, "address": 住所}, ...}
         ファイルが未作成、または不正な形式の場合は空の dict を返す。
     """
+    # GUI での利便性を優先し、破損ファイルは例外で止めず「プリセット無し」として扱う。
     if not _BUILDING_FILE.exists():
         return {}
     data = json.loads(_BUILDING_FILE.read_text("utf-8"))
@@ -64,7 +65,11 @@ def load_building_presets() -> dict[str, dict[str, str]]:
 
 
 def save_building_presets(presets: dict[str, dict[str, str]]) -> None:
-    """建物プリセット全体を JSON ファイルに上書き保存する。"""
+    """建物プリセット全体を JSON ファイルに上書き保存する。
+
+    差分更新ではなく全体書き戻しにしているのは、件数が少なく schema も単純であり、部分更新より
+    実装の見通しを優先できるためである。
+    """
     _ensure_dir()
     _BUILDING_FILE.write_text(
         json.dumps(presets, ensure_ascii=False, indent=2),
@@ -82,6 +87,7 @@ def add_building_preset(
         recipient: 提出先名（「御中」を含まない）
         address: 住所
     """
+    # building_name を辞書キーにすることで、一覧表示と上書き判定を単純化している。
     presets = load_building_presets()
     presets[building_name] = {"recipient": recipient, "address": address}
     save_building_presets(presets)
@@ -111,6 +117,8 @@ def load_company_info() -> dict[str, Any]:
 
     ファイルが未作成、または不正な形式の場合はデフォルト（空）の会社情報を返す。
     """
+    # 表紙出力では company 情報が必須キー前提で組み立てられるため、未保存時でも
+    # 空値入りの完全な dict を返して caller 側の分岐を減らす。
     if not _COMPANY_FILE.exists():
         return dict(_DEFAULT_COMPANY)
     data = json.loads(_COMPANY_FILE.read_text("utf-8"))

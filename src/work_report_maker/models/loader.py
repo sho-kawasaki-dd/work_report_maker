@@ -1,3 +1,5 @@
+"""report 入力 JSON の読込とフォーマット判定を担当する。"""
+
 from __future__ import annotations
 
 import json
@@ -8,6 +10,12 @@ from work_report_maker.config import DEFAULT_REPORT_JSON, LEGACY_REPORT_JSON, PR
 
 
 def detect_report_format(report_data: dict[str, Any]) -> str:
+    """入力が raw 形式か render-ready 形式かを判定する。
+
+    現行実装では `photos` と `photo_pages` のどちらか一方だけが存在することを前提にしている。
+    両方ある場合は、どちらを正とすべきか決められないため明示的にエラーにする。
+    """
+
     has_photo_pages = "photo_pages" in report_data
     has_photos = "photos" in report_data
 
@@ -22,6 +30,12 @@ def detect_report_format(report_data: dict[str, Any]) -> str:
 
 
 def resolve_input_path(json_path: Path | None = None) -> Path:
+    """既定の入力 JSON パスを解決する。
+
+    互換性のため、既定パスが存在せず legacy report が存在する場合だけ legacy 側へフォールバックする。
+    呼び出し側が明示的に `json_path` を渡した場合は、この自動切り替えを行わない。
+    """
+
     source_path = json_path or DEFAULT_REPORT_JSON
     if not source_path.is_absolute():
         source_path = PROJECT_ROOT / source_path
@@ -33,6 +47,8 @@ def resolve_input_path(json_path: Path | None = None) -> Path:
 
 
 def load_json_file(json_path: Path | None = None) -> dict[str, Any]:
+    """JSON ファイルを辞書として読み込む。"""
+
     source_path = resolve_input_path(json_path)
 
     try:

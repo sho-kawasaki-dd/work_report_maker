@@ -5,11 +5,15 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QBuffer, QByteArray, QDate, QIODevice, Qt
+from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QImage, QKeyEvent
 
 from work_report_maker.gui.main_window import ReportWizard
 from work_report_maker.gui.pages.photo_import_page import PhotoItem
+from tests.gui.wizard_stubs import make_photo_item
+
+
+_make_photo_item = make_photo_item
 
 
 def _bound_editor_photo_nos(page) -> list[str]:
@@ -24,40 +28,6 @@ def _show_photo_description_page(wizard: ReportWizard, page, qtbot) -> None:
     wizard.show()
     wizard.setCurrentId(6)
     qtbot.wait(50)
-
-
-def _make_photo_item(
-    name: str,
-    *,
-    site: str = "",
-    work_date: str = "",
-    location: str = "",
-    work_content: str = "",
-    remarks: str = "",
-) -> PhotoItem:
-    image = QImage(240, 180, QImage.Format.Format_RGB32)
-    image.fill(Qt.GlobalColor.blue)
-    encoded = QByteArray()
-    buffer = QBuffer(encoded)
-    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-    image.save(buffer, "PNG")
-    buffer.close()
-    return PhotoItem(
-        filename=name,
-        data=bytes(encoded),
-        format="png",
-        thumbnail=image.scaled(
-            128,
-            128,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        ),
-        site=site,
-        work_date=work_date,
-        location=location,
-        work_content=work_content,
-        remarks=remarks,
-    )
 
 
 def test_photo_description_page_is_added_after_arrange_page(qtbot) -> None:

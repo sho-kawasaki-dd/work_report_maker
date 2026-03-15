@@ -81,6 +81,10 @@ class CoverFormPage(QWizardPage):
         - 「建物プリセット読込」→ BuildingPresetDialog を表示、選択で (2)(5)(6) を自動入力
         - 「建物プリセット保存」→ 現在の (2)(5)(6) をプリセットとして保存
         - 「会社情報編集...」  → CompanyEditorDialog を表示
+
+    Cover page は後続ページにとっての source of truth でもある。Overview、WorkContent、
+    photo description defaults はこのページの現在値から再計算されるため、collect 系だけでなく
+    accessor 系メソッドも他ページへの契約として扱う。
     """
 
     def __init__(self, parent=None) -> None:
@@ -194,6 +198,8 @@ class CoverFormPage(QWizardPage):
         BuildingPresetDialog で「選択」を押すと (building_name, recipient, address) が返り、
         それぞれ建物名・提出先・住所フィールドに自動入力される。
         """
+        # プリセットは cover 入力のショートカットであり、apply 後の値は通常入力と同じく
+        # 後続ページ既定値の source of truth になる。
         dlg = BuildingPresetDialog(self)
         if dlg.exec() != BuildingPresetDialog.DialogCode.Accepted:
             return
@@ -211,6 +217,7 @@ class CoverFormPage(QWizardPage):
         建物名が空の場合は警告を表示して中断する。
         同名の建物名が既にあれば上書きされる。
         """
+        # building_name を辞書キーとして永続化する設計なので、空欄では一意識別子を作れない。
         building = self._building_edit.text().strip()
         if not building:
             QMessageBox.warning(self, "保存エラー", "建物名を入力してください。")
@@ -256,6 +263,8 @@ class CoverFormPage(QWizardPage):
         期間指定 OFF: "2025年 3月 27日(木)" 形式
         期間指定 ON:  "2025年 3月 27日(木) ～ 2025年 3月 29日(土)" 形式
         """
+        # 表紙上の表示文字列をそのまま overview / photo defaults 側でも使うため、
+        # ここで単日・期間の表記規則を一元化している。
         start = self._start_date.date()
         if self._range_check.isChecked():
             end = self._end_date.date()
@@ -281,6 +290,8 @@ class CoverFormPage(QWizardPage):
         from work_report_maker.gui.preset_manager import load_company_info
 
         company = load_company_info()
+        # 入力欄では敬称を持たせず、出力段階でだけ「御中」を補う。これによりプリセット保存や
+        # 後続ページ既定値との二重付与を避ける。
         # 提出先に「　御中」を自動付与（空欄の場合は付与しない）
         recipient_text = self._recipient_edit.text().strip()
         if recipient_text:

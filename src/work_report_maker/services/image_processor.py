@@ -29,12 +29,17 @@ def load_image(path: Path) -> Image.Image:
 
 
 def _crop_to_4_3(img: Image.Image) -> Image.Image:
-    """画像を中央クロップして 4:3 のアスペクト比に整形する。"""
+    """画像を中央クロップして 4:3 のアスペクト比に整形する。
+
+    施工写真レイアウトは 4:3 前提で組まれているため、縦横どちらが過剰でも中央基準で余剰部分を
+    切り落とす。端の情報が失われる代わりに、テンプレート上での余白や歪みを防ぐことを優先する。
+    """
     w, h = img.size
     target_ratio = 4 / 3
 
     current_ratio = w / h
     if abs(current_ratio - target_ratio) < 1e-6:
+        # 既に十分 4:3 に近ければ再 crop せず、1px 単位の不要な劣化を避ける。
         return img
 
     if current_ratio > target_ratio:
@@ -82,7 +87,11 @@ def is_pngquant_available() -> bool:
 
 
 def compress_png(img: Image.Image, quality_max: int = 75) -> bytes:
-    """PNG 圧縮。pngquant があれば使い、なければ Pillow quantize() でフォールバック。"""
+    """PNG 圧縮。pngquant があれば使い、なければ Pillow quantize() でフォールバック。
+
+    `pngquant` は環境依存で存在しないことがあるため、失敗時は例外で止めず Pillow ベースの圧縮へ
+    退避する。終了コード 99 は「品質帯に収まらないので元画像を返す」意味として扱う。
+    """
     import io
 
     if is_pngquant_available():
@@ -110,7 +119,7 @@ def compress_png(img: Image.Image, quality_max: int = 75) -> bytes:
                 return result.stdout if result.returncode == 0 else png_bytes
         except OSError:
             pass
-        # subprocess 失敗時はフォールバック
+        # pngquant 未導入や起動失敗時でも、少なくとも PNG bytes は返して import 継続を優先する。
         return png_bytes
 
     # pngquant が無い場合: Pillow quantize
@@ -131,6 +140,7 @@ def process_image(
     Returns:
         (圧縮後バイト列, フォーマット文字列 "jpeg" or "png")
     """
+
     img = load_image(path)
     img = resize_for_template(img, dpi)
 
@@ -205,6 +215,8 @@ def collect_image_paths(source: Path) -> list[Path]:
             if ext in SUPPORTED_IMAGE_EXTENSIONS:
                 paths.append(child)
             elif ext == ".zip":
+                # ディレクトリ配下に ZIP が混在していても、呼び出し側は「画像パス列」として
+                # 一様に扱えるよう、その場で展開して合流させる。
                 tmp = tempfile.mkdtemp(prefix="wrmzip_")
                 paths.extend(extract_images_from_zip(child, Path(tmp)))
         return paths

@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QWizardPage,
 )
+from work_report_maker.gui.wizard_contexts import WorkContentDefaults
 
 if TYPE_CHECKING:
     from work_report_maker.gui.main_window import ReportWizard
@@ -103,7 +104,11 @@ class _SubGroupWidget(QWidget):
 # ── 追加グループ ウィジェット ─────────────────────────────
 
 class _WorkGroupWidget(QWidget):
-    """作業内容グループ（追加グループ）。サブグループを 1 階層持てる。"""
+    """作業内容グループ（追加グループ）。サブグループを 1 階層持てる。
+
+    GUI 上は親子構造に見えるが、raw_report.overview.work_groups はフラット配列なので、
+    collect 時には parent と child を順序付きの list へ展開する。
+    """
 
     def __init__(
         self,
@@ -173,6 +178,8 @@ class _WorkGroupWidget(QWidget):
 
     def collect(self) -> list[dict]:
         """このグループ＋サブグループをフラット展開した list を返す。"""
+        # template 側はネスト構造を持たないため、見た目上の親子関係は marker/title に残し、
+        # データ構造としては 1 次元配列へ潰して返す。
         raw_lines = self.lines_edit.toPlainText().split("\n")
         entries: list[dict] = [
             {
@@ -197,6 +204,9 @@ class WorkContentPage(QWizardPage):
     """作業内容入力用のウィザードページ。
 
     先頭固定グループ（◎ + 工事・作業名）＋ 動的追加グループ（サブグループ対応）。
+
+    先頭グループだけは cover 由来の固定的な意味を持つため、ユーザーが marker/title を直接編集する
+    追加グループとは扱いを分けている。
     """
 
     def __init__(self, parent=None) -> None:
@@ -254,9 +264,13 @@ class WorkContentPage(QWizardPage):
 
         return cast(ReportWizard, self.wizard())
 
+    def _work_content_defaults(self) -> WorkContentDefaults:
+        """Cover page 由来の work content 既定値を取得する。"""
+        return self._wizard().work_content_defaults()
+
     def initializePage(self) -> None:
         """表紙の工事・作業名を先頭グループの title に反映する。"""
-        self._first_group_title_label.setText(self._wizard().cover_info().title_text)
+        self._first_group_title_label.setText(self._work_content_defaults().first_group_title)
 
     # ── グループ操作 ──────────────────────────────────────
 
@@ -270,13 +284,14 @@ class WorkContentPage(QWizardPage):
 
     def collect_work_groups(self) -> list[dict]:
         """先頭固定グループ + 追加グループをフラット展開して返す。"""
-        cover = self._wizard().cover_info()
+        defaults = self._work_content_defaults()
 
+        # 先頭グループは UI 上で title 編集を許さず、常に cover の工事・作業名と同期させる。
         raw_lines = self._first_group_lines.toPlainText().split("\n")
         groups: list[dict] = [
             {
                 "marker": _FIRST_MARKER,
-                "title": cover.title_text,
+                "title": defaults.first_group_title,
                 "lines": [ln for ln in raw_lines if ln.strip()],
             }
         ]

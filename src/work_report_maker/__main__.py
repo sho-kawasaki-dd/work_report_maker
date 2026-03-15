@@ -9,6 +9,12 @@ import sys
 
 
 def main() -> None:
+    """CLI と GUI の 2 つの起動経路を切り替える。
+
+    GUI でも最終的には同じ report 生成パイプラインへ合流するが、ここでは entry point を分け、
+    Qt 依存 import を `--gui` 指定時だけに遅延させている。
+    """
+
     if "--gui" in sys.argv:
         # GUI モード: PySide6 の QApplication とウィザードを起動
         from PySide6.QtWidgets import QApplication

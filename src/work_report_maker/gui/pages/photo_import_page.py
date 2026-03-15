@@ -37,7 +37,11 @@ if TYPE_CHECKING:
     from work_report_maker.gui.main_window import ReportWizard
 
 class _PhotoImportListController:
-    """PhotoItem 一覧と QListWidget の同期を扱う。"""
+    """PhotoItem 一覧と QListWidget の同期を扱う。
+
+    PhotoImportPage 本体からは「写真集合の更新」と「完了状態通知」を切り離し、
+    list widget 再構築や件数表示の更新はこの controller に集約する。
+    """
 
     def __init__(
         self,
@@ -58,13 +62,21 @@ class _PhotoImportListController:
         return self._photo_items
 
     def sync_photo_item_defaults(self) -> None:
+        """保持済み PhotoItem に最新の既定値を再同期する。"""
+
+        # Cover page に戻って現場名や施工箇所が変わった場合でも、未編集フィールドだけは
+        # 既定値へ追従させる。上書き判定そのものは PhotoItem 側へ委譲する。
         defaults = self._defaults_getter()
         for item in self._photo_items:
             item.sync_description_defaults(defaults)
 
     def add_items(self, items: list[PhotoItem]) -> None:
+        """PhotoItem 群を内部状態と一覧へ追加する。"""
+
         defaults = self._defaults_getter()
         for item in items:
+            # import 時点で既定値を注入しておくことで、Description page は「すでに意味づけ済みの
+            # PhotoItem 群」を前提に編集 UI を組み立てられる。
             item.sync_description_defaults(defaults)
         self._photo_items.extend(items)
         self._append_list_items(items)
@@ -82,6 +94,8 @@ class _PhotoImportListController:
             self.rebuild_list()
 
     def rebuild_list(self) -> None:
+        """内部状態を正として一覧全体を描き直す。"""
+
         self._list_widget.clear()
         self._append_list_items(self._photo_items)
         self._update_count_label()
@@ -121,6 +135,9 @@ class PhotoImportPage(QWizardPage):
         - 読み込み済みリスト (QListWidget)
         - クリアボタン
         - アスペクト比に関する注意書き
+
+    この page は「画像ファイルを PhotoItem 集合へ変換する入口」であり、並び替えや説明編集は
+    後続ページへ委譲する。ここで確定するのは、圧縮設定と PhotoItem の初期既定値だけである。
     """
 
     def __init__(self, parent=None) -> None:
@@ -237,6 +254,9 @@ class PhotoImportPage(QWizardPage):
 
     def current_photo_description_defaults(self) -> PhotoDescriptionDefaults:
         """現在のウィザード状態から写真説明の既定値を取得する。"""
+
+        # full ReportWizard では `photo_description_defaults()` が source of truth になる。
+        # 軽量 wizard fixture ではその API が無いこともあるため、空 defaults へ穏当に退避する。
         wizard = self.wizard()
         defaults_getter = getattr(wizard, "photo_description_defaults", None)
         if callable(defaults_getter):
@@ -256,6 +276,8 @@ class PhotoImportPage(QWizardPage):
 
     def initializePage(self) -> None:
         """前ページから戻った際に一覧表示を内部状態へ同期する。"""
+        # QListWidget 自体は view 状態に過ぎないため、戻り操作のたびに内部状態から再描画して
+        # 見た目を正規化する。
         self._list_controller.rebuild_list()
 
     # ── 読み込み操作 ──────────────────────────────────────
@@ -287,6 +309,8 @@ class PhotoImportPage(QWizardPage):
 
     def _run_import(self, paths: list[Path]) -> None:
         """画像読み込み・圧縮をワーカースレッドで実行する。"""
+        # page 側はジョブ起動条件と現在 UI 設定の受け渡しだけを担い、thread / worker / dialog の
+        # ライフサイクルは PhotoImportOperationController へ委譲する。
         self._import_operation.start(
             paths,
             dpi=self.dpi(),
@@ -336,6 +360,8 @@ class PhotoImportPage(QWizardPage):
 
     def _clear_all(self) -> None:
         """読み込み済み画像をすべてクリアする。"""
+        # Clear は page 内 state のみを対象にし、ファイルシステム上の入力元や一時展開済み ZIP を
+        # 巻き戻すものではない。
         self._list_controller.clear_all()
 
     def _update_count_label(self) -> None:

@@ -1,3 +1,5 @@
+"""raw report を render-ready report へ正規化する変換層。"""
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -27,6 +29,12 @@ DEFAULT_PHOTO_LAYOUT = {
 
 
 class WritingSpec(TypedDict):
+    """文字数帯ごとの文字組み設定。
+
+    `max_chars` 以内ならその設定を採用し、行数・1 行あたり文字数・フォントサイズ・layout mode を
+    まとめて切り替える。
+    """
+
     max_chars: int
     font_size_pt: float
     line_count: int
@@ -35,6 +43,8 @@ class WritingSpec(TypedDict):
 
 
 def _normalize_text(value: str | Iterable[str] | None) -> str:
+    """文字列または行配列を template 向けの単一テキストへそろえる。"""
+
     if value is None:
         return ""
     if isinstance(value, str):
@@ -43,6 +53,12 @@ def _normalize_text(value: str | Iterable[str] | None) -> str:
 
 
 def _wrap_text(text: str, chars_per_line: int, max_lines: int) -> list[str]:
+    """固定文字数・固定行数の前提でテキストを折り返す。
+
+    `max_lines` を超えた分は、最終表示行へ押し込んだ上で `chars_per_line` で再切り詰める。
+    したがってこの関数は overflow を通知せず、呼び出し側は「長文は末尾が失われうる」前提で使う。
+    """
+
     normalized = _normalize_text(text)
     if not normalized:
         return []
@@ -63,6 +79,7 @@ def _wrap_text(text: str, chars_per_line: int, max_lines: int) -> list[str]:
         return wrapped_lines
 
     visible_lines = wrapped_lines[:max_lines]
+    # 溢れた内容は末尾行へ連結して詰め直す。省略記号は付けず、表示密度の最大化を優先する。
     overflow = "".join(wrapped_lines[max_lines - 1:])
     visible_lines[-1] = overflow[:chars_per_line]
     return visible_lines
@@ -75,6 +92,12 @@ def _build_writing_block(
     specs: Sequence[WritingSpec],
     override_font_size_pt: float | None = None,
 ) -> dict[str, object]:
+    """文章ブロックを template が消費しやすい描画情報へ変換する。
+
+    spec は短文から順に並べる前提で、`char_count <= max_chars` を最初に満たしたものを採用する。
+    どの spec にも収まらない場合は最後の spec を使い、最も高密度なレイアウトへ退避する。
+    """
+
     normalized = _normalize_text(text)
     compact_text = normalized.replace("\n", "").replace(" ", "")
     char_count = len(compact_text)
@@ -102,6 +125,12 @@ def _build_writing_block(
 
 
 def _chunk_photos(items: Sequence[dict[str, object]]) -> list[list[dict[str, object]]]:
+    """写真配列を template 用の 3 枚単位ページへ分割する。
+
+    `page_break_after` は補助フラグとしてだけ使い、ページング後の完成形データへは持ち越さない。
+    そのためここでは `pop()` で破棄しており、同じ dict 群を再利用する caller には向かない。
+    """
+
     pages: list[list[dict[str, object]]] = []
     current_page: list[dict[str, object]] = []
 
@@ -165,6 +194,8 @@ def _normalize_work_groups(value: Any) -> list[dict[str, Any]]:
 
 
 def _build_photo_entry(item: dict[str, Any]) -> dict[str, object]:
+    """raw photo 1 件を render-ready photo entry へ変換する。"""
+
     work_content_specs: list[WritingSpec] = [
         {"max_chars": 12, "font_size_pt": 9.2, "line_count": 1, "chars_per_line": 12, "mode": "compact"},
         {"max_chars": 24, "font_size_pt": 8.6, "line_count": 2, "chars_per_line": 12, "mode": "standard"},
@@ -208,6 +239,8 @@ def _build_photo_entry(item: dict[str, Any]) -> dict[str, object]:
 
 
 def build_report_from_raw(raw_report: dict[str, Any]) -> dict[str, Any]:
+    """raw report を render-ready report へ変換する主入口。"""
+
     validate_raw_report_data(raw_report)
 
     cover = require_mapping("raw_report.cover", raw_report["cover"])
@@ -216,6 +249,7 @@ def build_report_from_raw(raw_report: dict[str, Any]) -> dict[str, Any]:
 
     blank_lines_value = overview_raw.get("blank_lines")
     if blank_lines_value is None:
+        # `blank_lines` が明示されていればそちらを優先し、無ければ件数指定から全角空白行を合成する。
         blank_line_count = overview_raw.get("blank_line_count", DEFAULT_BLANK_LINE_COUNT)
         blank_lines = ["　"] * int(blank_line_count)
     else:

@@ -27,17 +27,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWizardPage,
 )
+from work_report_maker.gui.wizard_contexts import OverviewDefaults
 
 if TYPE_CHECKING:
     from work_report_maker.gui.main_window import ReportWizard
-
-# ── 定数 ─────────────────────────────────────────────────
-
-_OVERVIEW_TITLE = "工 事 完 了 報 告 書"
-_WORK_SECTION_TITLE = "作業内容"
-_NOTE_LINE = "※ 仕上り品質報告書 『別紙写真参照』"
-_ENDING = "以上"
-_BLANK_LINE_COUNT = 12
 
 
 # ── メインページ ──────────────────────────────────────────
@@ -50,6 +43,9 @@ class OverviewFormPage(QWizardPage):
 
     手動入力:
         施工担当（現場責任者 / 現場作業者）
+
+    表示ラベルと最終 payload の両方が Cover page 由来の同じ既定値を使うため、
+    値の意味づけは `OverviewDefaults` に寄せ、この page 自体は UI 更新と追加入力の採取に集中する。
     """
 
     def __init__(self, parent=None) -> None:
@@ -103,11 +99,15 @@ class OverviewFormPage(QWizardPage):
         QWizard が「次へ」で本ページへ遷移するたびに呼ばれるため、
         ユーザーが Step 2 へ戻って値を変更した場合も追従する。
         """
-        cover = self._wizard().cover_info()
-        self._lbl_target.setText(self.default_photo_site())
-        self._lbl_location.setText(self.default_photo_location())
-        self._lbl_content.setText(cover.title_text)
-        self._lbl_date.setText(cover.work_date_text)
+        defaults = self._overview_defaults()
+        self._lbl_target.setText(defaults.target)
+        self._lbl_location.setText(defaults.location)
+        self._lbl_content.setText(defaults.content)
+        self._lbl_date.setText(defaults.work_date_text)
+
+    def _overview_defaults(self) -> OverviewDefaults:
+        """Cover 由来の overview 既定値を取得する。"""
+        return self._wizard().overview_defaults()
 
     def default_photo_site(self) -> str:
         """写真説明の「現場」に使う既定値を返す。"""
@@ -118,65 +118,22 @@ class OverviewFormPage(QWizardPage):
         return self._wizard().default_photo_location()
 
     # ── データ収集 ────────────────────────────────────────
-
-    def _build_company_lines(self) -> list[str]:
-        """会社情報から overview.company_lines を自動導出する。"""
-        from work_report_maker.gui.preset_manager import load_company_info
-
-        company = load_company_info()
-        lines: list[str] = []
-        for addr in company.get("address_lines", [""]):
-            if addr:
-                lines.append(addr)
-        name = company.get("name", "")
-        if name:
-            lines.append(name)
-        tel = company.get("tel", "")
-        if tel:
-            lines.append(f"TEL  {tel}")
-        fax = company.get("fax", "")
-        if fax:
-            lines.append(f"FAX  {fax}")
-        return lines
-
     def _build_info_rows(self) -> list[dict]:
         """info_rows を組み立てる。表紙流用 4 項目 + 施工担当。"""
-        cover = self._wizard().cover_info()
-
-        # 施工担当: 現場責任者 → value, 現場作業者 → extra_values
         manager = self._manager_edit.text().strip()
         workers = self._workers_edit.text().strip()
-        staff_value = f"現場責任者　{manager}" if manager else ""
-        staff_extra: list[str] = []
-        if workers:
-            staff_extra.append(f"現場作業者　{workers}")
-
-        return [
-            {"number": "1", "label": "施工対象・名称", "value": self.default_photo_site(), "extra_values": []},
-            {"number": "2", "label": "施工場所", "value": self.default_photo_location(), "extra_values": []},
-            {"number": "3", "label": "施工内容", "value": cover.title_text, "extra_values": []},
-            {"number": "4", "label": "施工日時", "value": cover.work_date_text, "extra_values": []},
-            {"number": "5", "label": "施工担当", "value": staff_value, "extra_values": staff_extra},
-        ]
+        return self._overview_defaults().build_info_rows(manager=manager, workers=workers)
 
     def collect_overview_data(self) -> dict:
         """フォーム入力値を ``raw_report.json`` の ``overview`` 構造に合わせた dict で返す。
 
         戻り値の構造は data/raw_report.json の "overview" キーと同じ形式。
         """
-        cover = self._wizard().cover_info()
-        recipient = cover.recipient_text
-        if recipient:
-            recipient += "　御中"
-
-        return {
-            "recipient": recipient,
-            "title": _OVERVIEW_TITLE,
-            "company_lines": self._build_company_lines(),
-            "info_rows": self._build_info_rows(),
-            "work_section_title": _WORK_SECTION_TITLE,
-            "work_groups": self._wizard().collect_work_groups(),
-            "blank_line_count": _BLANK_LINE_COUNT,
-            "note_line": _NOTE_LINE,
-            "ending": _ENDING,
-        }
+        # page 側では GUI 入力値だけを supply し、定型タイトルや company_lines などの
+        # schema ルールは OverviewDefaults 側へ委譲する。
+        defaults = self._overview_defaults()
+        return defaults.build_payload(
+            work_groups=self._wizard().collect_work_groups(),
+            manager=self._manager_edit.text().strip(),
+            workers=self._workers_edit.text().strip(),
+        )

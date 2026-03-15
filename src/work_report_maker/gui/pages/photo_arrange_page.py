@@ -43,6 +43,7 @@ from work_report_maker.gui.pages.photo_arrange_icons import (
     snap_zoom_percent,
 )
 from work_report_maker.gui.pages.photo_arrange_logic import build_row_move_plan
+from work_report_maker.gui.wizard_contexts import resolve_photo_wizard_context
 from work_report_maker.gui.widgets.photo_arrange_view import (
     PageBorderDelegate as _PageBorderDelegate,
     PhotoArrangeListView as _PhotoArrangeListView,
@@ -214,50 +215,21 @@ class PhotoArrangePage(QWizardPage):
 
         return cast(ReportWizard, self.wizard())
 
+    def _photo_context(self):
+        # page 本体は wizard の具体実装を知らず、photo 系操作は context だけを見る。
+        return resolve_photo_wizard_context(self.wizard())
+
     def _imported_photo_items(self) -> list[PhotoItem]:
-        wizard = self.wizard()
-        getter = getattr(wizard, "imported_photo_items", None)
-        if callable(getter):
-            return getter()
-        import_page = getattr(wizard, "_photo_import_page", None)
-        return list(getattr(import_page, "photo_items", []))
+        return self._photo_context().imported_photo_items()
 
     def _photo_import_settings(self):
-        wizard = self.wizard()
-        getter = getattr(wizard, "photo_import_settings", None)
-        if callable(getter):
-            return getter()
-        import_page = getattr(wizard, "_photo_import_page", None)
-        if import_page is None:
-            raise AttributeError("Photo import page is not available")
-
-        class _Settings:
-            def __init__(self, page) -> None:
-                self.dpi = page.dpi()
-                self.jpeg_quality = page.jpeg_quality()
-                self.png_quality_max = page.png_quality_max()
-
-        return _Settings(import_page)
+        return self._photo_context().photo_import_settings()
 
     def _add_imported_photo_items(self, items: list[PhotoItem]) -> None:
-        wizard = self.wizard()
-        adder = getattr(wizard, "add_imported_photo_items", None)
-        if callable(adder):
-            adder(items)
-            return
-        import_page = getattr(wizard, "_photo_import_page", None)
-        if import_page is not None:
-            import_page.add_photo_items(items)
+        self._photo_context().add_imported_photo_items(items)
 
     def _remove_imported_photo_items(self, items: list[PhotoItem]) -> None:
-        wizard = self.wizard()
-        remover = getattr(wizard, "remove_imported_photo_items", None)
-        if callable(remover):
-            remover(items)
-            return
-        import_page = getattr(wizard, "_photo_import_page", None)
-        if import_page is not None:
-            import_page.remove_photo_items(items)
+        self._photo_context().remove_imported_photo_items(items)
 
     # ── ページ初期化 ──────────────────────────────────────
 
@@ -267,8 +239,16 @@ class PhotoArrangePage(QWizardPage):
         前のページに戻って再度進んだ場合は、既存の並び順を維持する。
         """
 
-        # Arrange ページは PhotoImportPage をデータソースとして参照する。ここで毎回
-        # import 側の状態を取り込みつつ、Arrange 側での並び替え結果はできるだけ残す。
+        # Arrange page が解きたい問題は「import 側の最新集合」と「Arrange 側でユーザーが作った
+        # 現在順」を突き合わせることにある。毎回全面再構築すると並び替え結果が失われるため、
+        # ここでは次の 3-way reconciliation を行う。
+        #
+        # 1. 初回表示なら import 順をそのままモデル化する。
+        # 2. 再訪時は既存モデル順を温存しつつ、新規 import 分だけ末尾へ追加する。
+        # 3. import 側から消えた写真はモデルから除去する。
+        #
+        # PhotoItem の identity は id(photo) で管理しているため、表示順の変更やページ往復が
+        # あっても「同じ写真インスタンス」を追跡できる。
         import_items = self._imported_photo_items()
         import_keys = {self._photo_key(photo): photo for photo in import_items}
 
@@ -397,6 +377,8 @@ class PhotoArrangePage(QWizardPage):
             self._zoom_slider.blockSignals(False)
         value = snapped_value
 
+        # アイコンキャッシュは常に「現在倍率 1 つ分」だけ持つ設計なので、ズーム変更時は
+        # view 更新と cache 再構築を一体で実行する。
         self._icon_controller.apply_zoom_to_view(
             view=self._view,
             label=self._zoom_label,

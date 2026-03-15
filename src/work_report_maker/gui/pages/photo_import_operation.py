@@ -33,7 +33,11 @@ def _make_thumbnail(data: bytes, size: int = _THUMBNAIL_SIZE) -> QImage:
 
 
 class _ImportWorker(QObject):
-    """画像読み込み・圧縮をバックグラウンドで実行するワーカー。"""
+    """画像読み込み・圧縮をバックグラウンドで実行するワーカー。
+
+    UI スレッドへ 1 件ずつ signal を返すと QListWidget 再描画と PhotoItem 追加が過剰に発生する。
+    そのため、この worker は一定件数をまとめて `items_ready` で返し、進捗だけを細かく通知する。
+    """
 
     progress = Signal(int)
     items_ready = Signal(object)
@@ -59,6 +63,8 @@ class _ImportWorker(QObject):
         self._cancelled = True
 
     def run(self) -> None:
+        """画像変換を順次実行し、成功分はバッチ単位で UI へ返す。"""
+
         failures: list[tuple[str, str]] = []
         pending_items: list[PhotoItem] = []
         try:
@@ -81,6 +87,7 @@ class _ImportWorker(QObject):
                         )
                     )
                     if len(pending_items) >= _ITEM_BATCH_SIZE:
+                        # 8 件ずつ UI へ渡すことで、進捗は滑らかに保ちつつモデル更新の頻度を抑える。
                         self.items_ready.emit(pending_items)
                         pending_items = []
                 except Exception as exc:
@@ -108,7 +115,11 @@ def _format_failure_message(failures: list[tuple[str, str]]) -> str:
 
 
 class PhotoImportOperationController:
-    """PhotoImportPage の import 実行状態を管理する。"""
+    """PhotoImportPage の import 実行状態を管理する。
+
+    page 側は「開始できたか」「停止できたか」「失敗を表示するか」だけを扱い、
+    thread / worker / progress dialog のライフサイクル管理はこの controller に閉じ込める。
+    """
 
     def __init__(self, parent: QWidget) -> None:
         self._parent = parent
@@ -161,6 +172,8 @@ class PhotoImportOperationController:
         png_quality_max: int,
         on_items_ready: Callable[[list[PhotoItem]], None],
     ) -> bool:
+        """新しい import ジョブを開始する。既に実行中なら False を返す。"""
+
         if self.is_running():
             return False
 
@@ -203,6 +216,8 @@ class PhotoImportOperationController:
             self._thread.quit()
 
     def handle_thread_finished(self) -> None:
+        # worker 完了時点では dialog/worker/thread がまだ生きているため、UI 後始末と
+        # 失敗通知は thread 終了シグナル側でまとめて行う。
         self.cleanup()
         self.show_failures()
 
@@ -221,6 +236,8 @@ class PhotoImportOperationController:
             self._thread = None
 
     def cancel_active(self) -> bool:
+        """実行中ジョブの停止を試み、完全停止できたかを返す。"""
+
         if self._worker is not None:
             self._worker.cancel()
         if self._thread is not None and self._thread.isRunning():

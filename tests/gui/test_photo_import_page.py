@@ -4,32 +4,9 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Qt
-from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QWizard
+from tests.gui.wizard_stubs import create_import_wizard, make_photo_item
 
 from work_report_maker.gui.pages.photo_import_page import PhotoDescriptionDefaults, PhotoImportPage, PhotoItem
-
-
-def _make_photo_item(name: str) -> PhotoItem:
-    image = QImage(240, 180, QImage.Format.Format_RGB32)
-    image.fill(Qt.GlobalColor.blue)
-    encoded = QByteArray()
-    buffer = QBuffer(encoded)
-    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-    image.save(buffer, "PNG")
-    buffer.close()
-    return PhotoItem(
-        filename=name,
-        data=bytes(encoded),
-        format="png",
-        thumbnail=image.scaled(
-            128,
-            128,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        ),
-    )
 
 
 class _FakeWorker:
@@ -78,18 +55,17 @@ class _FakeProgress:
 
 
 def test_add_photo_items_updates_list_and_applies_current_defaults(qtbot) -> None:
-    wizard = QWizard()
-    page = PhotoImportPage()
-    wizard.photo_description_defaults = lambda: PhotoDescriptionDefaults(
-        site="現場A",
-        work_date="2025年 3月 27日(木)",
-        location="1階厨房",
+    wizard, page = create_import_wizard(
+        qtbot=qtbot,
+        defaults=PhotoDescriptionDefaults(
+            site="現場A",
+            work_date="2025年 3月 27日(木)",
+            location="1階厨房",
+        ),
     )
-    wizard.addPage(page)
-    qtbot.addWidget(wizard)
 
-    photo_a = _make_photo_item("a.jpg")
-    photo_b = _make_photo_item("b.jpg")
+    photo_a = make_photo_item("a.jpg")
+    photo_b = make_photo_item("b.jpg")
     page.add_photo_items([photo_a, photo_b])
 
     assert [item.filename for item in page.photo_items] == ["a.jpg", "b.jpg"]
@@ -104,9 +80,9 @@ def test_remove_photo_items_rebuilds_internal_state_and_list(qtbot) -> None:
     page = PhotoImportPage()
     qtbot.addWidget(page)
 
-    photo_a = _make_photo_item("a.jpg")
-    photo_b = _make_photo_item("b.jpg")
-    photo_c = _make_photo_item("c.jpg")
+    photo_a = make_photo_item("a.jpg")
+    photo_b = make_photo_item("b.jpg")
+    photo_c = make_photo_item("c.jpg")
     page.add_photo_items([photo_a, photo_b, photo_c])
 
     page.remove_photo_items([photo_b])

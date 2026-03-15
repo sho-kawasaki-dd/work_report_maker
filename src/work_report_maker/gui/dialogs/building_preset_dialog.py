@@ -31,6 +31,9 @@ class BuildingPresetDialog(QDialog):
 
     一覧には「建物名 (提出先名)」形式で表示される。
     ダブルクリックまたは「選択」ボタンで選択確定、「削除」ボタンで該当プリセットを削除する。
+
+    この dialog 自体は JSON schema を知らず、preset_manager が返す辞書を「一覧表示」と
+    「選択結果の返却」に変換することだけに責務を限定する。
     """
 
     def __init__(self, parent=None) -> None:
@@ -108,6 +111,7 @@ class BuildingPresetDialog(QDialog):
         name = self._current_building_name()
         if name is None:
             return
+        # delete 後に再読込することで、永続化結果を source of truth とした一覧へ戻す。
         delete_building_preset(name)
         self._refresh_list()
 

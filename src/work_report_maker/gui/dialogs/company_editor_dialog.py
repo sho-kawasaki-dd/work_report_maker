@@ -31,6 +31,9 @@ class CompanyEditorDialog(QDialog):
         - 住所       (QTextEdit)  複数行入力可。改行ごとに address_lines の要素に分割される。
         - TEL        (QLineEdit)
         - FAX        (QLineEdit)
+
+    dialog の責務は company_info.json の編集 UI を提供することにあり、Cover page 側の
+    出力整形や overview.company_lines 変換までは扱わない。
     """
 
     def __init__(self, parent=None) -> None:
@@ -101,6 +104,8 @@ class CompanyEditorDialog(QDialog):
         住所欄は改行で分割し、空行を除外して address_lines リストに変換する。
         """
         address_text = self._address_edit.toPlainText().strip()
+        # JSON 側は `address_lines` を前提にしているため、UI の複数行テキストを保存境界でだけ
+        # 配列へ変換する。空全体は空配列ではなく [""] にして key 形状を固定する。
         # 改行で分割し、空行を除外。全体が空の場合は [""] (空文字列1要素) にする
         address_lines = [line for line in address_text.split("\n") if line] if address_text else [""]
         info = {

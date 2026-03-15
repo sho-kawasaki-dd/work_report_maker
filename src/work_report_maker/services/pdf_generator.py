@@ -1,3 +1,5 @@
+"""report データの正規化、template 描画、PDF 出力を束ねる。"""
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -21,6 +23,13 @@ _weasyprint_html_class: type | None = None
 
 
 def _get_html_class() -> type:
+    """WeasyPrint の HTML クラスを遅延 import で取得する。
+
+    Windows では DLL 検索パスの設定が import 前に必要なため、モジュール import 時ではなく
+    初回利用時に `configure_weasyprint_runtime()` を呼ぶ。グローバルへキャッシュするのは
+    設定と import を一度で済ませるためで、thread-safe な初期化を厳密に保証するものではない。
+    """
+
     global _weasyprint_html_class
     if _weasyprint_html_class is None:
         configure_weasyprint_runtime()
@@ -36,6 +45,12 @@ def _get_html_class() -> type:
 
 
 def _resolve_photo_uri(photo_path: str | None) -> str | None:
+    """photo_path を template から参照可能な file URI へ正規化する。
+
+    非存在パスは例外にせず None を返す。template 側が「画像なし」として扱えるようにするためで、
+    ここでは描画不能ファイルを入力エラーとしては扱わない。
+    """
+
     if not photo_path:
         return None
     if photo_path.startswith("file://"):
@@ -50,6 +65,8 @@ def _resolve_photo_uri(photo_path: str | None) -> str | None:
 
 
 def _normalize_report_data(report_data: dict[str, Any]) -> dict[str, Any]:
+    """raw / render-ready の入力差を吸収し、render-ready 形式へそろえる。"""
+
     report_format = detect_report_format(report_data)
     normalized_report = build_report_from_raw(report_data) if report_format == "raw" else deepcopy(report_data)
 
@@ -62,6 +79,8 @@ def load_report_data(json_path: Path | None = None) -> dict[str, Any]:
 
 
 def prepare_report_for_render(report_data: dict[str, Any]) -> dict[str, Any]:
+    """template 描画直前の report データを構築する。"""
+
     prepared_report = _normalize_report_data(report_data)
 
     for page in prepared_report["photo_pages"]:
@@ -82,6 +101,8 @@ def generate_full_report(
     json_path: Path | None = None,
     output_path: Path = OUTPUT_PDF,
 ) -> None:
+    """report データまたは JSON から PDF を生成する。"""
+
     if report_data is not None and json_path is not None:
         raise ValueError("Pass either report_data or json_path, not both.")
 

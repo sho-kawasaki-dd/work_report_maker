@@ -15,6 +15,9 @@ class ProjectNamePage(QWizardPage):
     - QLineEdit でプロジェクト名を入力
     - registerField("project_name*", ...) により必須フィールドとして登録
       → 空欄のままでは「次へ」ボタンが無効化される
+
+    このページの責務は入力値の妥当性検査ではなく、以降のページや保存機能が参照する
+    識別子を 1 つ確定させることにある。詳細な保存形式やファイル名変換はここでは扱わない。
     """
 
     def __init__(self, parent=None) -> None:

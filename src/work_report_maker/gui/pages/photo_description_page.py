@@ -1,4 +1,15 @@
-"""ウィザード Step 7: 写真説明ページ。"""
+"""ウィザード Step 7: 写真説明ページ。
+
+Arrange page で確定した現在順を保ったまま、複数写真の説明欄を編集する。
+このページでは次の 3 つの状態を明確に分けて扱う。
+
+- current photo: 位置ラベルや前後移動の基準になる写真
+- focused photo: 複数表示時に現在キーボード入力を受ける編集ブロック
+- visible photos: 表示モード 1/2/4 枚に応じて現在画面に並ぶ写真群
+
+この 3 状態を分離することで、複数表示中でも「何を見ているか」と「どの editor が active か」
+を安定して同期できる。
+"""
 
 from __future__ import annotations
 
@@ -35,13 +46,18 @@ from work_report_maker.gui.pages.photo_description_navigation import (
     visible_range,
 )
 from work_report_maker.gui.pages.photo_import_page import PhotoItem
+from work_report_maker.gui.wizard_contexts import resolve_photo_wizard_context
 
 if TYPE_CHECKING:
     from work_report_maker.gui.main_window import ReportWizard
 
 
 class _PhotoDescriptionEditor(QGroupBox):
-    """単一写真の説明入力を担当する編集ブロック。"""
+    """単一写真の説明入力を担当する編集ブロック。
+
+    親 page は editor 内部 widget の focus を直接監視しない。代わりに、この editor が
+    `focus_received` を発火して「どの写真ブロックが active か」を page へ通知する。
+    """
 
     focus_received = Signal(object)
 
@@ -181,6 +197,7 @@ class _PhotoDescriptionEditor(QGroupBox):
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if event.type() == QEvent.Type.FocusIn and watched in self._focus_widgets and self._photo is not None:
+            # 子 widget へ入った focus を editor 単位の active 切り替えへ昇格させる。
             self.focus_received.emit(self)
         return super().eventFilter(watched, event)
 
@@ -326,48 +343,25 @@ class PhotoDescriptionPage(QWizardPage):
 
         return cast(ReportWizard, self.wizard())
 
+    def _photo_context(self):
+        # ReportWizard 本体と軽量 test wizard の差異は context 解決層へ隠蔽する。
+        return resolve_photo_wizard_context(self.wizard())
+
     def _sync_imported_photo_defaults(self) -> None:
-        wizard = self.wizard()
-        syncer = getattr(wizard, "sync_imported_photo_defaults", None)
-        if callable(syncer):
-            syncer()
-            return
-        import_page = getattr(wizard, "_photo_import_page", None)
-        if import_page is not None:
-            import_page.sync_photo_item_defaults()
+        self._photo_context().sync_imported_photo_defaults()
 
     def _arranged_photo_items(self) -> list[PhotoItem]:
-        wizard = self.wizard()
-        getter = getattr(wizard, "arranged_photo_items", None)
-        if callable(getter):
-            return getter()
-        arrange_page = getattr(wizard, "_photo_arrange_page", None)
-        if arrange_page is None:
-            return []
-        return arrange_page.collect_photo_items()
+        return self._photo_context().arranged_photo_items()
 
     def _move_arranged_photo_left(self, photo: PhotoItem) -> int | None:
-        wizard = self.wizard()
-        mover = getattr(wizard, "move_arranged_photo_left", None)
-        if callable(mover):
-            return mover(photo)
-        arrange_page = getattr(wizard, "_photo_arrange_page", None)
-        if arrange_page is None:
-            return None
-        return arrange_page.move_photo_item_left(photo)
+        return self._photo_context().move_arranged_photo_left(photo)
 
     def _move_arranged_photo_right(self, photo: PhotoItem) -> int | None:
-        wizard = self.wizard()
-        mover = getattr(wizard, "move_arranged_photo_right", None)
-        if callable(mover):
-            return mover(photo)
-        arrange_page = getattr(wizard, "_photo_arrange_page", None)
-        if arrange_page is None:
-            return None
-        return arrange_page.move_photo_item_right(photo)
+        return self._photo_context().move_arranged_photo_right(photo)
 
     def initializePage(self) -> None:
         """PhotoArrangePage の現在順を取り込み、表示対象を同期する。"""
+        # Cover page の既定値が戻り操作で変わっていても、未編集フィールドだけは説明欄へ追従させる。
         self._sync_imported_photo_defaults()
         self._photo_items = list(self._arranged_photo_items())
         self._current_photo_key = resolve_current_photo_key(
@@ -430,6 +424,8 @@ class PhotoDescriptionPage(QWizardPage):
         return None
 
     def _sync_focused_photo(self) -> None:
+        # focused photo は常に visible photos のどれかでなければならない。現在の focused key が
+        # 削除済み・非表示・未設定のいずれかなら、visible 範囲と current photo を材料に再解決する。
         visible_keys = [self._photo_key(photo) for photo in self.visible_photo_items()]
         self._focused_photo_key = resolve_focused_photo_key(
             visible_keys,
@@ -455,6 +451,8 @@ class PhotoDescriptionPage(QWizardPage):
         self._update_navigation_buttons()
 
     def _refresh_display(self) -> None:
+        # 表示モードが変わるたびに editor の割当先が変わるため、毎回「visible photos を bind し直す」
+        # 方針を取る。これにより、editor 自体の再生成を避けつつ current/focused の整合性を保つ。
         total = len(self._photo_items)
         current_no = self.current_photo_no()
 
